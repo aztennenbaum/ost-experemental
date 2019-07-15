@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <limits>
 
+//Requires gcc>=4.8.1 or clang >=3.8
+//MSVC builds but is horribly slow due to lack of inlining 
+
 //Arithmetic operations 
 struct plus {
   template< class T, class U>
@@ -788,6 +791,5 @@ struct to_str {
     return std::string("(")+to_str()(get<0>()(arg)) +")";
   }
 };
-
 
 #endif
