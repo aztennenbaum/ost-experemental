@@ -72,33 +72,19 @@ int main()
   assert((to_str()(apply_all<sqrt_multiplies<2> >()(i))=="((7.071068),(4.242641,4.242641),(-1.414214,1.414214,4.242641))"));
   auto j = make_tuple()(b,i);
   auto k = unscented<3>()(j);
-  std::cout<<to_str()(k)<<"\n";
   assert((to_str()(k)=="((-1.660254,5.803848,14.732051),(7,5.803848,11.267949),(7,11,7.803848),(7.000000,11.000000,13.000000),(15.660254,16.196152,11.267949),(7,16.196152,14.732051),(7,11,18.196152))"));
-  std::cout<<to_str()(apply_all<const_divides<2> >()(j));
-  //auto b = make_tuple()(7,11,13);
-  // auto l1 = inv_unscented<1,3>()(make_tuple()(make_tuple()(0.995f,0.0995f,0.0f)));
-  // auto l2 = inv_unscented<7,3>()(unscented<3>()(l1));
-  // auto l3 = inv_unscented<7,3>()(unscented<3>()(l2));
-  // auto l4 = inv_unscented<7,3>()(unscented<3>()(l3));
-  // auto l5 = inv_unscented<7,3>()(unscented<3>()(l4));
-  // auto l6 = inv_unscented<7,3>()(unscented<3>()(l5));
-  // auto l7 = inv_unscented<7,3>()(unscented<3>()(l6));
-  // auto l8 = inv_unscented<7,3>()(unscented<3>()(l7));
-  // auto l9 = inv_unscented<7,3>()(unscented<3>()(l8));
-  // //auto l = k;
-  // std::cout<<to_str()(apply_all<inv>()(l1))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l2))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l3))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l4))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l5))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l6))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l7))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l8))<<"\n";
-  // std::cout<<to_str()(apply_all<inv>()(l9))<<"\n";
-  // 
-  // auto butts=apply_all<plus>()(a,b);
-  //ld_cat<3>()(
-  //std::cout<<to_str()(lower_triangular<3,identity>()(fill<3>()(0)))<<"\n";
-  //std::cout<<to_str()(apply_all<rounding_error_variance>()(get<0>()(make_tuple()(make_tuple()(0.995f,0.0995f,0.0f)))))<<"\n";
+  auto l1 = inv_unscented<1,3>()(make_tuple()(make_tuple()(0.995f,0.0995f,0.0f)));
+  auto l2 = inv_unscented<7,3>()(unscented<3>()(l1));
+  auto l3 = inv_unscented<7,3>()(unscented<3>()(l2));
+  auto l4 = inv_unscented<7,3>()(unscented<3>()(l3));
+  auto l5 = inv_unscented<7,3>()(unscented<3>()(l4));
+  auto l6 = inv_unscented<7,3>()(unscented<3>()(l5));
+  auto l7 = inv_unscented<7,3>()(unscented<3>()(l6));
+  auto l8 = inv_unscented<7,3>()(unscented<3>()(l7));
+  auto l9 = inv_unscented<7,3>()(unscented<3>()(l8));
+  assert((to_str()(apply_all<inv>()(l9))=="((1.005025,10.050250,inf),((3450364.958615),(244734992.529621,42777618.631158),(inf,inf,9223372586610622464.000000)))"));
+  
+  std::cout<<to_str()(lower_triangular<3,identity>()(fill<3>()(0)))<<"\n";
+  std::cout<<to_str()(apply_all<rounding_error_variance>()(get<0>()(make_tuple()(make_tuple()(0.995f,0.0995f,0.0f)))))<<"\n";
 }
 

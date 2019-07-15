@@ -205,7 +205,7 @@ template <std::size_t N>
 struct sqrt_multiplies {
   template< class T>
   constexpr auto operator()( const T& arg) const ->
-    decltype(std::sqrt(arg)) {
+  decltype(std::sqrt(arg)) {
     return std::sqrt(N) * arg;
   }
 };
@@ -214,8 +214,9 @@ struct sqrt_multiplies {
 template <std::size_t N>
 struct const_divides {
   template< class T>
-  constexpr T operator()( const T& arg ) const {
-    return arg/N;
+  constexpr auto operator()( const T& arg) const ->
+  decltype((T)(arg/N)) {
+    return (T)(arg/N);
   }
 };
 
@@ -385,22 +386,18 @@ struct apply_left<1,Operation, Offset> {
   }
 };
 
+//Note: Operation must have auto return type to resolve overload using SFINAE 
 template <class Operation>
 struct apply_all { 
-  template< typename T, typename U>
-  constexpr auto operator()(const T &lhs, const U &rhs) const ->
-  decltype(Operation()(lhs,rhs)) {
-    return Operation()(lhs,rhs);
-  }
   template<typename T, typename... U>
   constexpr auto operator()(const T &lhs, const std::tuple<U...> &rhs) const ->
-  decltype(apply_right<sizeof...(U),Operation> ()(lhs,rhs)) {
-    return apply_right<sizeof...(U),Operation> ()(lhs,rhs);
+  decltype(apply_right<sizeof...(U),apply_all<Operation> > ()(lhs,rhs)) {
+    return apply_right<sizeof...(U),apply_all<Operation> > ()(lhs,rhs);
   }
   template<typename... T, typename U>
   constexpr auto operator()(const std::tuple<T...>&lhs, const U &rhs) const ->
-  decltype(apply_left<sizeof...(T),Operation>()(lhs,rhs)) {
-    return apply_left<sizeof...(T),Operation>()(lhs,rhs);
+  decltype(apply_left<sizeof...(T),apply_all<Operation> >()(lhs,rhs)) {
+    return apply_left<sizeof...(T),apply_all<Operation> >()(lhs,rhs);
   }
   template<typename... T, typename... U>
   constexpr auto operator()(const std::tuple<T...>&lhs, const std::tuple<U...>&rhs) const ->
@@ -413,10 +410,10 @@ struct apply_all {
   decltype(apply<sizeof...(T),apply_all<Operation> >()(arg)) {
     return apply<sizeof...(T),apply_all<Operation> >()(arg);
   }
-  template< typename T >
-  constexpr auto operator()( const T& arg) const ->
-  decltype(Operation()(arg)) {
-    return Operation()(arg);
+  template< typename... T >
+  constexpr auto operator()( const T&... arg) const ->
+  decltype(Operation()(arg...)) {
+    return Operation()(arg...);
   }
 };
 
