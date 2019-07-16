@@ -1,6 +1,5 @@
 #include "vec.hpp"
 
-#include <tuple>
 #include <cassert>
 #include <iostream>
 #include <typeinfo>
@@ -82,6 +81,7 @@ int main()
   auto l7 = inv_unscented<7,3>()(unscented<3>()(l6));
   auto l8 = inv_unscented<7,3>()(unscented<3>()(l7));
   auto l9 = inv_unscented<7,3>()(unscented<3>()(l8));
+  std::cout<<to_str()(apply_all<inv>()(l9))<<"\n";
   assert((to_str()(apply_all<inv>()(l9))=="((1.005025,10.050250,inf),((3450364.958615),(244734992.529621,42777618.631158),(inf,inf,9223372586610622464.000000)))"));
   
   std::cout<<to_str()(lower_triangular<3,identity>()(fill<3>()(0)))<<"\n";

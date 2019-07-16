@@ -7,7 +7,7 @@
 #include <limits>
 
 //Requires gcc>=4.8.1 or clang >=3.8
-//MSVC builds but is horribly slow due to lack of inlining 
+//MSVC builds but is probably horribly slow due to lack of inlining 
 
 //Arithmetic operations 
 struct plus {
@@ -177,8 +177,8 @@ struct maximum {
 struct absolute {
   template< class T >
   constexpr auto operator()( const T& arg) const ->
-  decltype(std::max(arg,-arg)) {
-    return std::max(arg,-arg);
+  decltype(maximum()(arg,-arg)) {
+    return maximum()(arg,-arg);
   }
 };
 
@@ -634,67 +634,53 @@ struct normalize {
   }
 };
 
-
 template <std::size_t N>
-struct cholesky_row3
+class cholesky
 {
-  //Calculate and append middle column(s)
+  friend class cholesky<N+1>;
+  //Calculate and append next element
   template<typename T1,typename T2,typename T3>
-  constexpr auto operator()(const T1 &arg, const T2 &left, const T3 &up) const ->
+  static constexpr auto append_elem(const T1 &arg, const T2 &left, const T3 &up) ->
   decltype(tuple_cat()(left,make_tuple()((arg-dot<N-1>()(left,up))/get<N-1>()(up)))) {
     return tuple_cat()(left,make_tuple()((arg-dot<N-1>()(left,up))/get<N-1>()(up)));
   }
-};
-template <std::size_t N>
-struct cholesky_row
-{
-  //Calculate and append final column
+  //Return row N
+  template<typename... T1,typename T2>
+  static constexpr auto build_row(const std::tuple<T1...>&arg, const T2 &up) ->
+  decltype(append_elem(get<N-1>()(arg),cholesky<N-1>::build_row(arg,up),get<N-1>()(up))) {
+    return append_elem(get<N-1>()(arg),cholesky<N-1>::build_row(arg,up),get<N-1>()(up));
+  }
+  //Calculate and append diagonal element
   template<typename T1,typename T2>
-  constexpr auto operator()(const T1 &arg, const T2 &left) const ->
+  constexpr auto append_diag_elem(const T1 &arg, const T2 &left) const ->
   decltype(tuple_cat()(left,make_tuple()(stable_sqrt()(arg-dot<N-1>()(left,left))))) {
     return tuple_cat()(left,make_tuple()(stable_sqrt()(arg-dot<N-1>()(left,left))));
   }
-  //Return row N
+  //Calculate and append row
   template<typename... T1,typename T2>
-  constexpr auto operator()(const std::tuple<T1...>&arg, const T2 &up) const ->
-  decltype(cholesky_row3<N>()(get<N-1>()(arg),cholesky_row<N-1>()(arg,up),get<N-1>()(up))) {
-    return cholesky_row3<N>()(get<N-1>()(arg),cholesky_row<N-1>()(arg,up),get<N-1>()(up));
+  constexpr auto append_row(const std::tuple<T1...>&arg, const T2 &up) const ->
+  decltype(tuple_cat()(up,make_tuple()(append_diag_elem(get<N-1>()(get<N-1>()(arg)),cholesky<N-1>::build_row(get<N-1>()(arg),up))))) {
+    return tuple_cat()(up,make_tuple()(append_diag_elem(get<N-1>()(get<N-1>()(arg)),cholesky<N-1>::build_row(get<N-1>()(arg),up))));
   }
-};
-template <>
-struct cholesky_row<1>
-{
-  //Calculate first column
-  template<typename... T1,typename T2>
-  constexpr auto operator()(const std::tuple<T1...>&arg, const T2 &up) const ->
-  decltype(make_tuple()(get<0>()(arg)/get<0>()(get<0>()(up)))) {
-    return make_tuple()(get<0>()(arg)/get<0>()(get<0>()(up)));
-  }
-};
-template <std::size_t N>
-struct cholesky2
-{
-  //Calculate and append row N
-  template<typename... T1,typename T2>
-  constexpr auto operator()(const std::tuple<T1...>&arg, const T2 &up) const ->
-  decltype(tuple_cat()(up,make_tuple()(cholesky_row<N>()(get<N-1>()(get<N-1>()(arg)),cholesky_row<N-1>()(get<N-1>()(arg),up))))) {
-    return tuple_cat()(up,make_tuple()(cholesky_row<N>()(get<N-1>()(get<N-1>()(arg)),cholesky_row<N-1>()(get<N-1>()(arg),up))));
-  }
-};
-template <std::size_t N>
-struct cholesky
-{
+public:
   //Return cholesky decomposition N
   template<typename... T1>
   constexpr auto operator()(const std::tuple<T1...>&arg) const ->
-  decltype(cholesky2<N>()(arg,cholesky<N-1>()(arg))) {
-    return cholesky2<N>()(arg,cholesky<N-1>()(arg));
+  decltype(append_row(arg,cholesky<N-1>()(arg))) {
+    return append_row(arg,cholesky<N-1>()(arg));
   }
 };
 
 template <>
-struct cholesky<1>
+class cholesky<1>
 {
+  friend class cholesky<2>;
+  //Calculate first element of row
+  template<typename... T1,typename T2>
+  static constexpr auto build_row(const std::tuple<T1...>&arg, const T2 &up) ->
+  decltype(make_tuple()(get<0>()(arg)/get<0>()(get<0>()(up)))) {
+    return make_tuple()(get<0>()(arg)/get<0>()(get<0>()(up)));
+  }
 public:
   //Return first cholesky decomposition
   template<typename... T1>
@@ -714,33 +700,54 @@ struct unscented {
                        transpose<N,N>()(du_cat<N>()(apply_all<plus >()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg))),upper_triangular<N, identity>()(get<0>()(arg)))));
   }
 };
-
 template <std::size_t N1, std::size_t N2>
-struct cov3
-{
-  template<typename T1,typename T2>
-  constexpr auto operator()(const T1 &arg, const T2 &rounding_) const ->
-  decltype(ld_cat<N2>()(apply_all<const_divides<N1-1> >()(lower_triangular<N2,dot<N1> >()(arg,arg)),apply_all<make_tuple>()(apply<N2,plus>()(apply_all<const_divides<N1-1> >()(apply<N2,sum<N1> >()(apply_all<squared>()(arg))),rounding_)))) {
-    return ld_cat<N2>()(apply_all<const_divides<N1-1> >()(lower_triangular<N2,dot<N1> >()(arg,arg)),apply_all<make_tuple>()(apply<N2,plus>()(apply_all<const_divides<N1-1> >()(apply<N2,sum<N1> >()(apply_all<squared>()(arg))),rounding_)));
-  }
-};
-//calculate mean and covariance of a set of points, including rounding error
-template <std::size_t N1, std::size_t N2>
-struct cov2
-{
-  template<typename T1, typename T2, typename T3>
-  constexpr auto operator()(const T1 &arg, const T2 &mean_, const T3 &rounding_) const ->
-  decltype(make_tuple()(mean_,cov3<N1,N2>()(transpose<N1,N2>()(apply_left<N1,apply<N2,minus> >()(arg,mean_)),rounding_))) {
-    return make_tuple()(mean_,cov3<N1,N2>()(transpose<N1,N2>()(apply_left<N1,apply<N2,minus> >()(arg,mean_)),rounding_));
-  }
-};
-template <std::size_t N1, std::size_t N2>
-struct cov
+struct worst_case_rounding_variance
 {
   template<typename T1>
   constexpr auto operator()(const T1 &arg) const ->
-  decltype(cov2<N1,N2>()(arg,mean<N1,N2>()(arg),sum<N1,N2>()(apply_all<rounding_error_variance>()(arg)))) {
-    return cov2<N1,N2>()(arg,mean<N1,N2>()(arg),sum<N1,N2>()(apply_all<rounding_error_variance>()(arg)));
+  decltype(apply_all<make_tuple>()(sum<N1,N2>()(apply_all<rounding_error_variance>()(arg)))) {
+    return apply_all<make_tuple>()(sum<N1,N2>()(apply_all<rounding_error_variance>()(arg)));
+  }  
+};
+
+template <std::size_t N1, std::size_t N2>
+class cov
+{
+  template<typename T1>
+  constexpr auto divide_variance(const T1 &arg) const ->
+  decltype(apply_all<const_divides<N1-1> >()(arg)) {
+    return apply_all<const_divides<N1-1> >()(arg);
+  }
+  template<typename T1>
+  constexpr auto calculate_variance(const T1 &arg_minus_mean) const ->
+  decltype(apply_all<make_tuple>()(divide_variance(apply<N2,sum<N1> >()(apply_all<squared>()(arg_minus_mean))))) {
+    return apply_all<make_tuple>()(divide_variance(apply<N2,sum<N1> >()(apply_all<squared>()(arg_minus_mean))));
+  }
+  template<typename T1>
+  constexpr auto calculate_covariance_lt(const T1 &arg_minus_mean) const ->
+  decltype(divide_variance(lower_triangular<N2,dot<N1> >()(arg_minus_mean,arg_minus_mean))) {
+    return divide_variance(lower_triangular<N2,dot<N1> >()(arg_minus_mean,arg_minus_mean));
+  }
+  template<typename T1, typename T2>
+  constexpr auto append_variance(const T1 &arg, const T2 &arg_minus_mean) const ->
+  decltype(ld_cat<N2>()(calculate_covariance_lt(arg_minus_mean),apply_all<plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)))) {
+    return ld_cat<N2>()(calculate_covariance_lt(arg_minus_mean),apply_all<plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)));
+  }  
+  template<typename T1, typename T2>
+  constexpr auto subtract_mean(const T1 &arg, const T2 &mean_) const ->
+  decltype(transpose<N1,N2>()(apply_left<N1,apply<N2,minus> >()(arg,mean_))) {
+    return transpose<N1,N2>()(apply_left<N1,apply<N2,minus> >()(arg,mean_));
+  }
+  template<typename T1, typename T2>
+  constexpr auto append_mean(const T1 &arg, const T2 &mean_) const ->
+  decltype(make_tuple()(mean_,append_variance(arg,subtract_mean(arg,mean_)))) {
+    return make_tuple()(mean_,append_variance(arg,subtract_mean(arg,mean_)));
+  }
+public:
+  template<typename T1>
+  constexpr auto operator()(const T1 &arg) const ->
+  decltype(append_mean(arg,mean<N1,N2>()(arg))) {
+    return append_mean(arg,mean<N1,N2>()(arg));
   }
 };
 template <std::size_t N2>
@@ -749,8 +756,8 @@ struct cov<1,N2>
 public:
   template<typename T1>
   constexpr auto operator()(const T1 &arg) const ->
-  decltype(make_tuple()(get<0>()(arg),ld_cat<N2>()(lower_triangular<N2,identity>()(fill<N2>()(0)),transpose<1,N2>()(apply_all<rounding_error_variance>()(arg))))) {
-    return make_tuple()(get<0>()(arg),ld_cat<N2>()(lower_triangular<N2,identity>()(fill<N2>()(0)),transpose<1,N2>()(apply_all<rounding_error_variance>()(arg))));
+  decltype(make_tuple()(get<0>()(arg),ld_cat<N2>()(lower_triangular<N2,identity>()(fill<N2>()(0)),worst_case_rounding_variance<1,N2>()(arg)))) {
+    return make_tuple()(get<0>()(arg),ld_cat<N2>()(lower_triangular<N2,identity>()(fill<N2>()(0)),worst_case_rounding_variance<1,N2>()(arg)));
   }
 };
 //apply to tuple(mean,cov)
