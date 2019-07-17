@@ -738,7 +738,7 @@ class cov
     return divide_variance(lower_triangular<N2,dot<N1> >()(arg_minus_mean,arg_minus_mean));
   }
   template<typename T1, typename T2>
-  constexpr auto append_variance(const T1 &arg, const T2 &arg_minus_mean) const ->
+  constexpr auto calculate_covariance(const T1 &arg, const T2 &arg_minus_mean) const ->
   decltype(ld_cat<N2>()(calculate_covariance_lt(arg_minus_mean),apply_all<plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)))) {
     return ld_cat<N2>()(calculate_covariance_lt(arg_minus_mean),apply_all<plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)));
   }  
@@ -749,8 +749,8 @@ class cov
   }
   template<typename T1, typename T2>
   constexpr auto append_mean(const T1 &arg, const T2 &mean_) const ->
-  decltype(make_tuple()(mean_,append_variance(arg,subtract_mean(arg,mean_)))) {
-    return make_tuple()(mean_,append_variance(arg,subtract_mean(arg,mean_)));
+  decltype(make_tuple()(mean_,calculate_covariance(arg,subtract_mean(arg,mean_)))) {
+    return make_tuple()(mean_,calculate_covariance(arg,subtract_mean(arg,mean_)));
   }
 public:
   template<typename T1>
