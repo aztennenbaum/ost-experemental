@@ -692,12 +692,21 @@ public:
 //unscented transform - arg is tuple(mean, cholesky(covarience))
 template <std::size_t N>
 struct unscented { 
+  template<class Operation, typename T>
+  constexpr auto calculate_sigma_points_lt(const T &arg) const ->
+  decltype(apply_all<Operation>()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg)))) {
+    return apply_all<Operation>()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg)));
+  }
+  template<class Operation, typename T>
+  constexpr auto calculate_sigma_points(const T &arg) const ->
+  decltype(transpose<N,N>()(du_cat<N>()(calculate_sigma_points_lt<Operation>(arg),upper_triangular<N, identity>()(get<0>()(arg))))) {
+    return transpose<N,N>()(du_cat<N>()(calculate_sigma_points_lt<Operation>(arg),upper_triangular<N, identity>()(get<0>()(arg))));
+  }
+  
   template<typename T>
   constexpr auto operator()(const T &arg) const ->
-  decltype(tuple_cat()(transpose<N,N>()(du_cat<N>()(apply_all<minus>()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg))),upper_triangular<N, identity>()(get<0>()(arg)))),make_tuple()(apply_all<sqrt_multiplies<1> >()(get<0>()(arg))),
-                       transpose<N,N>()(du_cat<N>()(apply_all<plus >()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg))),upper_triangular<N, identity>()(get<0>()(arg)))))) {
-    return tuple_cat()(transpose<N,N>()(du_cat<N>()(apply_all<minus>()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg))),upper_triangular<N, identity>()(get<0>()(arg)))),make_tuple()(apply_all<sqrt_multiplies<1> >()(get<0>()(arg))),
-                       transpose<N,N>()(du_cat<N>()(apply_all<plus >()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg))),upper_triangular<N, identity>()(get<0>()(arg)))));
+  decltype(tuple_cat()(calculate_sigma_points<minus>(arg),make_tuple()(apply_all<sqrt_multiplies<1> >()(get<0>()(arg))),calculate_sigma_points<plus >(arg))) {
+    return tuple_cat()(calculate_sigma_points<minus>(arg),make_tuple()(apply_all<sqrt_multiplies<1> >()(get<0>()(arg))),calculate_sigma_points<plus >(arg));
   }
 };
 template <std::size_t N1, std::size_t N2>
