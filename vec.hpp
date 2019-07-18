@@ -791,6 +791,38 @@ struct inv_unscented<N1,N2>
     return inv_unscented<N2>()(cov<N1,N2>()(arg));
   }
 };
+
+//divide by lower triangular
+template <std::size_t N>
+class divided_by_lt
+{
+template<typename T1,typename T2,typename T3>
+constexpr auto reduce_off_diag(const T1 &x,const T2 &m2, const T3 &m3) const ->
+  decltype(apply<N-1,minus>()(x,apply_left<N-1,multiplies>()(m2,m3))) {
+    return apply<N-1,minus>()(x,apply_left<N-1,multiplies>()(m2,m3));
+  }
+template<typename T1,typename T2,typename T3>
+constexpr auto reduce_row(const T1 &x,const T2 &L,const T3 &diag_elem) const ->
+  decltype(tuple_cat()(divided_by_lt<N-1>()(reduce_off_diag(x,get<N-1>()(L),diag_elem),L),make_tuple()(diag_elem))) {
+    return tuple_cat()(divided_by_lt<N-1>()(reduce_off_diag(x,get<N-1>()(L),diag_elem),L),make_tuple()(diag_elem));
+  }
+public:
+  template<typename T1,typename T2>
+  constexpr auto operator()(const T1 &x, const T2 &L) const ->
+  decltype(reduce_row(x,L,divides()(get<N-1>()(x),get<N-1>()(get<N-1>()(L))))) {
+    return reduce_row(x,L,divides()(get<N-1>()(x),get<N-1>()(get<N-1>()(L))));
+  }
+};
+template <>
+class divided_by_lt<1>
+{
+public:
+  template<typename T1,typename T2>
+  constexpr auto operator()(const T1 &x, const T2 &L) const ->
+  decltype(make_tuple()(divides()(get<0>()(x),get<0>()(get<0>()(L))))) {
+    return make_tuple()(divides()(get<0>()(x),get<0>()(get<0>()(L))));
+  }
+};
 //String conversion
 struct to_str { 
   template< typename T >

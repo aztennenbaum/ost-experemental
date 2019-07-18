@@ -16,6 +16,7 @@ struct inv {
     return 1.0/arg;
   }
 };
+
 int main()
 {
   auto a = make_tuple()(2,3,5, 7);
@@ -81,10 +82,11 @@ int main()
   auto l7 = inv_unscented<7,3>()(unscented<3>()(l6));
   auto l8 = inv_unscented<7,3>()(unscented<3>()(l7));
   auto l9 = inv_unscented<7,3>()(unscented<3>()(l8));
-  std::cout<<to_str()(apply_all<inv>()(l9))<<"\n";
+  //std::cout<<to_str()(apply_all<inv>()(l9))<<"\n";
   assert((to_str()(apply_all<inv>()(l9))=="((1.005025,10.050250,inf),((3450364.958615),(244734992.529621,42777618.631158),(inf,inf,9223372586610622464.000000)))"));
-  
-  std::cout<<to_str()(lower_triangular<3,identity>()(fill<3>()(0)))<<"\n";
   std::cout<<to_str()(apply_all<rounding_error_variance>()(get<0>()(make_tuple()(make_tuple()(0.995f,0.0995f,0.0f)))))<<"\n";
+  
+  assert((to_str()(divided_by_lt<3>()(b,i))=="(0.933333,2.222222,4.333333)"));
+  
 }
 
