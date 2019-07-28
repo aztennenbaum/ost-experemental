@@ -189,13 +189,6 @@ struct identity {
     return arg;
   }
 };
-struct rounding_error_variance {
-  template< class T >
-  constexpr auto operator()( const T& arg) const ->
-  decltype(squared()(arg*std::numeric_limits<T>::epsilon())/12) {
-    return squared()(arg*std::numeric_limits<T>::epsilon())/12;
-  }
-};
 struct stable_sqrt {
   template< class T>
   constexpr auto operator()( const T& arg) const ->
@@ -267,6 +260,18 @@ struct fill<1> {
   }
 };
 
+
+template<typename>
+struct tuple_depth {
+  static constexpr size_t value = 0;
+};
+
+template<typename T1, typename... T2>
+struct tuple_depth<std::tuple<T1, T2...> > {
+  static constexpr size_t value = tuple_depth<T1>::value+1;
+};
+
+//Functional operators
 template <typename OpOuter, typename... OpInner> struct op_cat;
 template <typename OpOuter, typename OpNext, typename... OpInner>
 struct op_cat<OpOuter,OpNext,OpInner...> {
@@ -296,7 +301,6 @@ struct op_cat<OpInner> {
   }
 };
 
-//Functional operators
 template <std::size_t N, class BinaryOperation, std::size_t Offset=0>
 struct reduce {
   template<typename... T>
@@ -389,34 +393,33 @@ struct apply_left<1,Operation, Offset> {
   }
 };
 
-//Note: Operation must have auto return type to resolve overload using SFINAE 
 template <class Operation>
 struct apply_all { 
-  template<typename T, typename... U>
-  constexpr auto operator()(const T &lhs, const std::tuple<U...> &rhs) const ->
-  decltype(apply_right<sizeof...(U),apply_all<Operation> > ()(lhs,rhs)) {
-    return apply_right<sizeof...(U),apply_all<Operation> > ()(lhs,rhs);
+  template< typename T1 >
+  constexpr auto operator()( const T1& arg) const ->
+  decltype(apply<std::tuple_size<T1>::value,Operation>()(arg)) {
+    return apply<std::tuple_size<T1>::value,Operation>()(arg);
   }
-  template<typename... T, typename U>
-  constexpr auto operator()(const std::tuple<T...>&lhs, const U &rhs) const ->
-  decltype(apply_left<sizeof...(T),apply_all<Operation> >()(lhs,rhs)) {
-    return apply_left<sizeof...(T),apply_all<Operation> >()(lhs,rhs);
+  template< typename T1, typename T2 >
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(apply<minimum()(std::tuple_size<T1>::value,std::tuple_size<T2>::value),Operation>()(lhs,rhs)) {
+    return apply<minimum()(std::tuple_size<T1>::value,std::tuple_size<T2>::value),Operation>()(lhs,rhs);
   }
-  template<typename... T, typename... U>
-  constexpr auto operator()(const std::tuple<T...>&lhs, const std::tuple<U...>&rhs) const ->
-  decltype(apply<minimum()(sizeof...(T),sizeof...(U)),apply_all<Operation> >()(lhs,rhs)) {
-    return apply<minimum()(sizeof...(T),sizeof...(U)),apply_all<Operation> >()(lhs,rhs);
+};
+template <class Operation>
+struct apply_all_right { 
+  template< typename T1, typename T2 >
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(apply_right<std::tuple_size<T2>::value,Operation>()(lhs,rhs)) {
+    return apply_right<std::tuple_size<T2>::value,Operation>()(lhs,rhs);
   }
-  
-  template<typename... T>
-  constexpr auto operator()(const std::tuple<T...>&arg) const ->
-  decltype(apply<sizeof...(T),apply_all<Operation> >()(arg)) {
-    return apply<sizeof...(T),apply_all<Operation> >()(arg);
-  }
-  template< typename... T >
-  constexpr auto operator()( const T&... arg) const ->
-  decltype(Operation()(arg...)) {
-    return Operation()(arg...);
+};
+template <class Operation>
+struct apply_all_left { 
+  template< typename T1, typename T2 >
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(apply_left<std::tuple_size<T1>::value,Operation>()(lhs,rhs)) {
+    return apply_left<std::tuple_size<T1>::value,Operation>()(lhs,rhs);
   }
 };
 
@@ -480,27 +483,52 @@ struct upper_triangular<2,Operation,Count> {
 template <std::size_t N>
 struct ld_cat {
   template<typename T1, typename T2>
-  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  constexpr auto ld_cat_column(const T1 &lhs, const T2 &rhs) const ->
   decltype(tuple_cat()(ld_cat<N-1>()(lhs,rhs),make_tuple()(tuple_cat()(get<N-2>()(lhs),get<N-1>()(rhs))))) {
     return tuple_cat()(ld_cat<N-1>()(lhs,rhs),make_tuple()(tuple_cat()(get<N-2>()(lhs),get<N-1>()(rhs))));
+  }
+  template<typename T1, typename... T2, typename... T3>
+  constexpr auto operator()(const T1 &lhs, const std::tuple<std::tuple<T2...>,T3...> &rhs) const ->
+  decltype(ld_cat_column(lhs,rhs)) {
+    return ld_cat_column(lhs,rhs);
+  }
+  template<typename T1, typename T2>
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(ld_cat_column(lhs,apply_all<make_tuple>()(rhs))) {
+    return ld_cat_column(lhs,apply_all<make_tuple>()(rhs));
   }
 };
 
 template <>
 struct ld_cat<1> {
-  template<typename T1, typename T2>
-  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  template<typename T1, typename... T2, typename... T3>
+  constexpr auto operator()(const T1 &lhs, const std::tuple<std::tuple<T2...>,T3...> &rhs) const ->
   decltype(make_tuple()(get<0>()(rhs))) {
     return make_tuple()(get<0>()(rhs));
+  }
+  template<typename T1, typename T2>
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(make_tuple()(make_tuple()(get<0>()(rhs)))) {
+    return make_tuple()(make_tuple()(get<0>()(rhs)));
   }
 };
 
 template <std::size_t N>
 struct du_cat {
   template<typename T1, typename T2>
-  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  constexpr auto du_cat_column(const T1 &lhs, const T2 &rhs) const ->
   decltype(tuple_cat()(apply<N-1,tuple_cat>()(lhs,rhs),make_tuple()(get<N-1>()(lhs)))) {
     return tuple_cat()(apply<N-1,tuple_cat>()(lhs,rhs),make_tuple()(get<N-1>()(lhs)));
+  }
+  template<typename T1, typename... T2, typename... T3>
+  constexpr auto operator()(const T1 &lhs, const std::tuple<std::tuple<T2...>,T3...> &rhs) const ->
+  decltype(du_cat_column(lhs,rhs)) {
+    return du_cat_column(lhs,rhs);
+  }
+  template<typename T1, typename T2>
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(du_cat_column(apply<N, make_tuple>()(lhs),rhs)) {
+    return du_cat_column(apply<N, make_tuple>()(lhs),rhs);
   }
 };
 
@@ -689,24 +717,64 @@ public:
     return make_tuple()(make_tuple()(stable_sqrt()(get<0>()(get<0>()(arg)))));
   }
 };
+
+template <std::size_t N>
+struct uncorrelated_lt
+{
+  template<typename T1>
+  constexpr auto operator()(const T1 &arg) const ->
+  decltype(ld_cat<N>()(lower_triangular<N,identity>()(fill<N-1>()(0)),arg)) {
+    return ld_cat<N>()(lower_triangular<N,identity>()(fill<N-1>()(0)),arg);
+  }  
+};
+
+//unscented transform - arg is tuple(mean, cholesky(covarience))
+template<class Operation, std::size_t N, std::size_t D> struct calculate_sigma_points_lt;
+template<class Operation, std::size_t N>
+struct calculate_sigma_points_lt<Operation,N,2> {
+  template<typename T1, typename T2>
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(apply_all<apply_all_right<Operation> >()(lhs,apply<N,apply_all<sqrt_multiplies<N> > >()(rhs))) {
+    return apply_all<apply_all_right<Operation> >()(lhs,apply<N,apply_all<sqrt_multiplies<N> > >()(rhs));
+  }
+};
+template<class Operation, std::size_t N>
+struct calculate_sigma_points_lt<Operation,N,1> {
+  template<typename T1, typename T2>
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(calculate_sigma_points_lt<Operation,N,2>()(lhs,uncorrelated_lt<N>()(rhs))) {
+    return calculate_sigma_points_lt<Operation,N,2>()(lhs,uncorrelated_lt<N>()(rhs));
+  }
+};
+template<class Operation, std::size_t N>
+struct calculate_sigma_points_lt<Operation,N,0> {
+  template<typename T1, typename T2>
+  constexpr auto operator()(const T1 &lhs, const T2 &rhs) const ->
+  decltype(calculate_sigma_points_lt<Operation,N,1>()(lhs,fill<N>()(rhs))) {
+    return calculate_sigma_points_lt<Operation,N,1>()(lhs,fill<N>()(rhs));
+  }
+};
+
 //unscented transform - arg is tuple(mean, cholesky(covarience))
 template <std::size_t N>
 struct unscented { 
-  template<class Operation, typename T>
-  constexpr auto calculate_sigma_points_lt(const T &arg) const ->
-  decltype(apply_all<Operation>()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg)))) {
-    return apply_all<Operation>()(get<0>()(arg),apply_all<sqrt_multiplies<N> >()(get<1>()(arg)));
-  }
-  template<class Operation, typename T>
-  constexpr auto calculate_sigma_points(const T &arg) const ->
-  decltype(transpose<N,N>()(du_cat<N>()(calculate_sigma_points_lt<Operation>(arg),upper_triangular<N, identity>()(get<0>()(arg))))) {
-    return transpose<N,N>()(du_cat<N>()(calculate_sigma_points_lt<Operation>(arg),upper_triangular<N, identity>()(get<0>()(arg))));
+  template<class Operation, typename T1, typename T2>
+  constexpr auto calculate_sigma_points(const T1 &lhs, const T2 &rhs) const ->
+  decltype(transpose<N,N>()(du_cat<N>()(calculate_sigma_points_lt<Operation,N,tuple_depth<T2>::value>()(lhs,rhs),upper_triangular<N, identity>()(lhs)))) {
+    return transpose<N,N>()(du_cat<N>()(calculate_sigma_points_lt<Operation,N,tuple_depth<T2>::value>()(lhs,rhs),upper_triangular<N, identity>()(lhs)));
   }
   
   template<typename T>
   constexpr auto operator()(const T &arg) const ->
-  decltype(tuple_cat()(calculate_sigma_points<minus>(arg),make_tuple()(apply_all<sqrt_multiplies<1> >()(get<0>()(arg))),calculate_sigma_points<plus >(arg))) {
-    return tuple_cat()(calculate_sigma_points<minus>(arg),make_tuple()(apply_all<sqrt_multiplies<1> >()(get<0>()(arg))),calculate_sigma_points<plus >(arg));
+  decltype(tuple_cat()(calculate_sigma_points<minus>(get<0>()(arg),get<1>()(arg)),make_tuple()(get<0>()(arg)),calculate_sigma_points<plus >(get<0>()(arg),get<1>()(arg)))) {
+    return tuple_cat()(calculate_sigma_points<minus>(get<0>()(arg),get<1>()(arg)),make_tuple()(get<0>()(arg)),calculate_sigma_points<plus >(get<0>()(arg),get<1>()(arg)));
+  }
+};
+struct rounding_error_variance {
+  template< class T >
+  constexpr auto operator()( const T& arg) const ->
+  decltype(squared()(arg*std::numeric_limits<T>::epsilon())/12) {
+    return squared()(arg*std::numeric_limits<T>::epsilon())/12;
   }
 };
 template <std::size_t N1, std::size_t N2>
@@ -714,8 +782,8 @@ struct worst_case_rounding_variance
 {
   template<typename T1>
   constexpr auto operator()(const T1 &arg) const ->
-  decltype(apply_all<make_tuple>()(sum<N1,N2>()(apply_all<rounding_error_variance>()(arg)))) {
-    return apply_all<make_tuple>()(sum<N1,N2>()(apply_all<rounding_error_variance>()(arg)));
+  decltype(sum<N1,N2>()(apply<N1,apply<N2,rounding_error_variance> >()(arg))) {
+    return sum<N1,N2>()(apply<N1,apply<N2,rounding_error_variance> >()(arg));
   }  
 };
 
@@ -723,34 +791,24 @@ template <std::size_t N1, std::size_t N2>
 class cov
 {
   template<typename T1>
-  constexpr auto divide_variance(const T1 &arg) const ->
-  decltype(apply_all<const_divides<N1-1> >()(arg)) {
-    return apply_all<const_divides<N1-1> >()(arg);
-  }
-  template<typename T1>
   constexpr auto calculate_variance(const T1 &arg_minus_mean) const ->
-  decltype(apply_all<make_tuple>()(divide_variance(apply<N2,sum<N1> >()(apply_all<squared>()(arg_minus_mean))))) {
-    return apply_all<make_tuple>()(divide_variance(apply<N2,sum<N1> >()(apply_all<squared>()(arg_minus_mean))));
+  decltype(apply<N2,const_divides<N1-1> >()(sum<N1,N2>()(apply<N1,apply<N2,squared> >()(arg_minus_mean)))) {
+    return apply<N2,const_divides<N1-1> >()(sum<N1,N2>()(apply<N1,apply<N2,squared> >()(arg_minus_mean)));
   }
   template<typename T1>
   constexpr auto calculate_covariance_lt(const T1 &arg_minus_mean) const ->
-  decltype(divide_variance(lower_triangular<N2,dot<N1> >()(arg_minus_mean,arg_minus_mean))) {
-    return divide_variance(lower_triangular<N2,dot<N1> >()(arg_minus_mean,arg_minus_mean));
+  decltype(apply<N2-1,apply_all<const_divides<N1-1> > >()(lower_triangular<N2,dot<N1> >()(arg_minus_mean,arg_minus_mean))) {
+    return apply<N2-1,apply_all<const_divides<N1-1> > >()(lower_triangular<N2,dot<N1> >()(arg_minus_mean,arg_minus_mean));
   }
   template<typename T1, typename T2>
   constexpr auto calculate_covariance(const T1 &arg, const T2 &arg_minus_mean) const ->
-  decltype(ld_cat<N2>()(calculate_covariance_lt(arg_minus_mean),apply_all<plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)))) {
-    return ld_cat<N2>()(calculate_covariance_lt(arg_minus_mean),apply_all<plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)));
+  decltype(ld_cat<N2>()(calculate_covariance_lt(transpose<N1,N2>()(arg_minus_mean)),apply<N2,plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)))) {
+    return ld_cat<N2>()(calculate_covariance_lt(transpose<N1,N2>()(arg_minus_mean)),apply<N2,plus>()(calculate_variance(arg_minus_mean),worst_case_rounding_variance<N1,N2>()(arg)));
   }  
   template<typename T1, typename T2>
-  constexpr auto subtract_mean(const T1 &arg, const T2 &mean_) const ->
-  decltype(transpose<N1,N2>()(apply_left<N1,apply<N2,minus> >()(arg,mean_))) {
-    return transpose<N1,N2>()(apply_left<N1,apply<N2,minus> >()(arg,mean_));
-  }
-  template<typename T1, typename T2>
   constexpr auto append_mean(const T1 &arg, const T2 &mean_) const ->
-  decltype(make_tuple()(mean_,calculate_covariance(arg,subtract_mean(arg,mean_)))) {
-    return make_tuple()(mean_,calculate_covariance(arg,subtract_mean(arg,mean_)));
+  decltype(make_tuple()(mean_,calculate_covariance(arg,apply_left<N1,apply<N2,minus> >()(arg,mean_)))) {
+    return make_tuple()(mean_,calculate_covariance(arg,apply_left<N1,apply<N2,minus> >()(arg,mean_)));
   }
 public:
   template<typename T1>
@@ -765,8 +823,8 @@ struct cov<1,N2>
 public:
   template<typename T1>
   constexpr auto operator()(const T1 &arg) const ->
-  decltype(make_tuple()(get<0>()(arg),ld_cat<N2>()(lower_triangular<N2,identity>()(fill<N2>()(0)),worst_case_rounding_variance<1,N2>()(arg)))) {
-    return make_tuple()(get<0>()(arg),ld_cat<N2>()(lower_triangular<N2,identity>()(fill<N2>()(0)),worst_case_rounding_variance<1,N2>()(arg)));
+  decltype(make_tuple()(get<0>()(arg),uncorrelated_lt<N2>()(worst_case_rounding_variance<1,N2>()(arg)))) {
+    return make_tuple()(get<0>()(arg),uncorrelated_lt<N2>()(worst_case_rounding_variance<1,N2>()(arg)));
   }
 };
 //apply to tuple(mean,cov)

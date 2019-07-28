@@ -69,10 +69,11 @@ int main()
   auto h = make_tuple()(make_tuple()(25),make_tuple()(15,18),make_tuple()(-5, 0,11));
   auto i = cholesky<3>()(h);
   assert((to_str()(i)=="((5.000000),(3.000000,3.000000),(-1.000000,1.000000,3.000000))"));
-  assert((to_str()(apply_all<sqrt_multiplies<2> >()(i))=="((7.071068),(4.242641,4.242641),(-1.414214,1.414214,4.242641))"));
+  assert((to_str()(apply<3,apply_all<sqrt_multiplies<2> > >()(i))=="((7.071068),(4.242641,4.242641),(-1.414214,1.414214,4.242641))"));
   auto j = make_tuple()(b,i);
   auto k = unscented<3>()(j);
-  assert((to_str()(k)=="((-1.660254,5.803848,14.732051),(7,5.803848,11.267949),(7,11,7.803848),(7.000000,11.000000,13.000000),(15.660254,16.196152,11.267949),(7,16.196152,14.732051),(7,11,18.196152))"));
+  std::cout<<to_str()(k)<<"\n";
+  assert((to_str()(k)=="((-1.660254,5.803848,14.732051),(7,5.803848,11.267949),(7,11,7.803848),(7,11,13),(15.660254,16.196152,11.267949),(7,16.196152,14.732051),(7,11,18.196152))"));
   auto l1 = inv_unscented<1,3>()(make_tuple()(make_tuple()(0.995f,0.0995f,0.0f)));
   auto l2 = inv_unscented<7,3>()(unscented<3>()(l1));
   auto l3 = inv_unscented<7,3>()(unscented<3>()(l2));
@@ -82,11 +83,16 @@ int main()
   auto l7 = inv_unscented<7,3>()(unscented<3>()(l6));
   auto l8 = inv_unscented<7,3>()(unscented<3>()(l7));
   auto l9 = inv_unscented<7,3>()(unscented<3>()(l8));
-  //std::cout<<to_str()(apply_all<inv>()(l9))<<"\n";
-  assert((to_str()(apply_all<inv>()(l9))=="((1.005025,10.050250,inf),((3450364.958615),(244734992.529621,42777618.631158),(inf,inf,9223372586610622464.000000)))"));
-  std::cout<<to_str()(apply_all<rounding_error_variance>()(get<0>()(make_tuple()(make_tuple()(0.995f,0.0995f,0.0f)))))<<"\n";
-  
-  assert((to_str()(divided_by_lt<3>()(b,i))=="(0.933333,2.222222,4.333333)"));
+  std::cout<<to_str()(l9)<<"\n";
+  assert(to_str()(l9)=="((0.995000,0.099500,0.000000),((0.000000),(0.000000,0.000000),(0.000000,0.000000,0.000000)))");
+  //
+  //assert((to_str()(divided_by_lt<3>()(b,i))=="(0.933333,2.222222,4.333333)"));
+  //auto m = make_tuple()(make_tuple()(0,0,0),make_tuple()(1,1,1));
+  //auto m2 = apply_all<minus>()(get<0>()(m),apply_all<sqrt_multiplies<3> >()(get<1>()(m)));
+  //auto m3 = du_cat<3>()(m2,upper_triangular<3, identity>()(get<0>()(m)));
+  //auto m3 = ld_cat<3>()(lower_triangular<3, identity>()(get<0>()(m)),m2);
+  //auto m3 = du_cat<3>()(m2,upper_triangular<3, identity>()(get<0>()(m)));
+  //std::cout<<to_str()(unscented<3>()(m))<<"\n";
   
 }
 
