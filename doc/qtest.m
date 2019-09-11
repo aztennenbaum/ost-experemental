@@ -6,11 +6,15 @@ r1=randn([3 1]);
 r1=r1/norm(r1);
 r2=randn([3 1]);
 r2=r2/norm(r2);
+r3=randn([3 1]);
+r3=r3/norm(r3);
 b1=A*r1;
 b2=A*r2;
+b3=A*r3;
 
-b=[b1 b2];
-r=[r1 r2];
+
+b=[b1 b2 b3];
+r=[r1 r2 r3];
 
 Q4=calc_q3([b1(1) -b1(2) -b1(3)],...
         [b2(1) -b2(2) -b2(3)],...

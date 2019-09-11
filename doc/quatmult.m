@@ -1,6 +1,3 @@
 function p = quatmult(q, r)
-q=q';
-r=r';
-phi = [q(4)*eye(3) - skew(q(1:3)) ; -q(1:3)'];
-
-p = transpose([phi q]*r);
+ p = [q(4)*r(1:3)+r(4)*q(1:3)-cross(q(1:3),r(1:3)) q(4)*r(4)-sum(q(1:3).*r(1:3))];
+ 
