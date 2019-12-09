@@ -1,5 +1,5 @@
-function [ U, S, V] = svd2( X )
-%Closed form svd for 2x2 complex matrices
+function [ U, S, V] = svd2b( X )
+%Closed form svd for 2x2 complex matrices where det(X)=1
     X=X/sqrt(det(X));
     P = X*X';
     

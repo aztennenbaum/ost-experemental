@@ -1,4 +1,4 @@
-function [ M ] = stupid_wahba6( x, y )
+function [ M ] = stupid_wahba7( x, y )
 %UNTITLED8 Summary of this function goes here
 %   Detailed explanation goes here
 A=[x ones(size(x)) -x.*y -y]'*[x ones(size(x)) -x.*y -y];
@@ -9,8 +9,6 @@ w=normalize(A'*w);
 w=normalize(A*w);
 w=normalize(A'*w);
 
-M=[w(1) w(2);w(3) w(4)];
-M=M/sqrt(det(M));
-[u,s,v]=svd2(M);
-M=u*v';
+vqs=mobius2vqs([w(1) w(2);w(3) w(4)]);
+M=q2mobius(vqs(2:5));
 end

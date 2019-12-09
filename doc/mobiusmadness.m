@@ -1,4 +1,5 @@
 function [ M ] = mobiusmadness( r, b )
+%mobius(M,b)=r
 % exact solution:
 % 
 % syms x1 x2 x3 x y1 y2 y3 y
