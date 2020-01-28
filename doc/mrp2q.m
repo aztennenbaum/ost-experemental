@@ -1,4 +1,4 @@
 function [ q ] = mrp2q( mrp)
 % Convert modified rodrigues parameter to quaternion
-q=normalize([2*mrp;1-sum(mrp.^2)]);
+q=[2*mrp;1-sum(mrp.^2)];
 end
