@@ -17,7 +17,7 @@ for y=1:size(m_img,1)
     end
 end
 
-photons2val=mean(v_img(:)./m_img(:));
+photons2val=mean(v_img(:)./max(m_img(:),ones(size(m_img(:)))/255));
 v_img=m_img*photons2val;
 figure;imagesc(I);
 II=zeros(size(I));
@@ -33,11 +33,13 @@ for i=aa.PixelIdxList
        val=I(ii)-bg_val; r_val=[val val];
        totalval=sum(val);
        centroid = sum(r_val.*P,1)/totalval; r_centroid=repmat(centroid,size(val));
+       %if centroid(1)>75&&centroid(1)<125&&centroid(2)>75&&centroid(2)<125
            pixvar      = eye(2)*sum(val.^2)/(12*totalval^2);
            shotvar     = photons2val*(P-r_centroid)'*diag(val+bg_val)*(P-r_centroid)/totalval^2;
-%           centroid
-%           (pixvar+shotvar)^(1/2)
+           centroid
+           (pixvar+shotvar)^(1/2)
            II(ii)=1;
+       %end
     end
 end
 figure;imagesc(II)
