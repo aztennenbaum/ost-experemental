@@ -10,7 +10,7 @@ ConcavityThreshold=0.15;%minimum concavity of the central 3x3 pixel window.
 TileSize=64;    %according to SExtractor documentation 32-256 works well.
 BrightestN = 10;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
 
-[I_grey,I_stats]=CollectImageStats(I);
+[I_grey,I_stats]=CollectImageStats(I,TileSize);
 
 aa=bwconncomp((I_grey>imresize(I_stats.m_img+5*sqrt(I_stats.v_img),size(I_grey),'bilinear')),4);
 stars = zeros(aa.NumObjects,4);

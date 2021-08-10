@@ -1,6 +1,4 @@
-function [ I_grey, I_stats ] = CollectImageStats(I)
-
-	TileSize=64;    %according to SExtractor documentation 32-256 works well.
+function [ I_grey, I_stats ] = CollectImageStats(I,TileSize)
 
 	img_height=size(I,1);
 	img_width =size(I,2);
