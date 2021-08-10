@@ -1,8 +1,0 @@
-close all;
-figure;
-for num=1:20
-	I=min(abs(trnd(1,1024))*2^-num,10);
-	imshow(I);
-	%FastSExtractor(I);
-    %FastSExtractor(I);
-end
