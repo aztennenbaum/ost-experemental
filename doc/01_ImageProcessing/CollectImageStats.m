@@ -1,36 +1,46 @@
-function [ I_grey, I_stats ] = CollectImageStats(I,TileSize)
-
+function [ I_stats ] = CollectImageStats(I,TileSize)
 	img_height=size(I,1);
 	img_width =size(I,2);
-	channels=size(I,3);
-	step=1/double(256*channels-1);
-	I_grey=sum(im2double(I),3)/double(channels);%I/255
+	[~,bin_val]=imhist(I);
+	step=bin_val(2);
+	img_max=bin_val(end);
 
-	m_img=zeros(ceil(size(I_grey)/TileSize));
+	m_img=zeros(ceil(size(I)/TileSize));
 	v_img=zeros(size(m_img));
 	p_img=zeros(size(m_img));
-	y_idx=round(linspace(1,size(I_grey,1)+1,size(m_img,1)+1));
-	x_idx=round(linspace(1,size(I_grey,2)+1,size(m_img,2)+1));
+	y_idx=round(linspace(1,size(I,1)+1,size(m_img,1)+1));
+	x_idx=round(linspace(1,size(I,2)+1,size(m_img,2)+1));
 	for y=1:size(m_img,1)
 		for x=1:size(m_img,2)
-       
-			[bin_count,bin_val]=imhist(I_grey(y_idx(y):y_idx(y+1)-1,x_idx(x):x_idx(x+1)-1),256*channels);
-			old_idx=-1;
-			idx=numel(bin_count);
-			%numiter=0;
-			while idx ~= old_idx
-				m=sum(bin_val(1:idx).*bin_count(1:idx))/sum(bin_count(1:idx));
-				v=sum((bin_val(1:idx)-m).^2.*bin_count(1:idx))/(sum(bin_count(1:idx))-1);
-				old_idx=idx;
-				idx=find(bin_val>(m+5*sqrt(v)),1)-1;
-				%numiter=numiter+1;
-			end
-			%numiter
-			%bias assuming uniform photon distribution within bins
-			p=(v-step^2/12)/(m+step/2);
-			m_img(y,x)=m;%mean
-			v_img(y,x)=v;%varience
-			p_img(y,x)=p;%photons2val
+            tile=I(y_idx(y):y_idx(y+1)-1,x_idx(x):x_idx(x+1)-1);
+            [bin_count,bin_val]=imhist(tile);
+
+            bin_count=bin_count+eps;
+            c0 = bin_count;
+            c1 = bin_count.*bin_val;
+            c2 = bin_count.*bin_val.^2;
+
+            s=zeros(size(bin_val));
+            m=zeros(size(bin_val));
+            v=zeros(size(bin_val));
+            t=zeros(size(bin_count));
+            
+            for i=1:numel(bin_count)
+              if i>1&&bin_val(i-1)<t(i-1)
+                  c0(i)=c0(i)+c0(i-1);
+                  c1(i)=c1(i)+c1(i-1);
+                  c2(i)=c2(i)+c2(i-1);
+              end
+              s(i) = c0(i);
+              m(i) = c1(i)/c0(i);
+              v(i) = c2(i)/c0(i) - m(i)*m(i) + step^2/12;
+              m(i) = m(i) + step/2;
+              t(i) = m(i) + sqrt(v(i))*5;
+            end
+            [~,idx]=max(c0);
+            m_img(y,x)=m(idx);%mean
+            v_img(y,x)=v(idx);%varience
+            p_img(y,x)=v(idx)/m(idx);%photons2val
 		end
 	end
 
@@ -40,6 +50,7 @@ function [ I_grey, I_stats ] = CollectImageStats(I,TileSize)
 				   'x_idx',x_idx,...
 				   'y_idx',y_idx,...
 				   'step',step,...
+				   'img_max',img_max,...
 				   'img_height',img_height,...
 				   'img_width',img_width);
 end
