@@ -1,4 +1,4 @@
-function [ H, predicted_val, observed_val,  observed_var, params_new, params_idx, residual_new, stars_new] = multiparam_pixval_predictor_decoupled( params, stars, I_stats )
+function [ H, predicted_val, observed_val,  observed_var, params_new, params_idx, residual_new, stars_new] = multiparam_pixval_predictor_decoupled( params, I_stats, stars )
 %todo better way to do this (pixelval and jacobian output number of nonzero
 %rows, dont change size of matrices
 %UNTITLED14 Summary of this function goes here

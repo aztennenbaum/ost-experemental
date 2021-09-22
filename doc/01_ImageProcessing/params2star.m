@@ -1,4 +1,4 @@
-function [ star ] = get_star_pixels(centroid ,r, I)
+function [ star ] = params2star(centroid ,r, I)
 %   Detailed explanation goes here
 
 	x_ctr=centroid(2);
