@@ -6,7 +6,7 @@ function [ H, predicted_val, observed_val,  observed_var, params_new, params_idx
 
 	row_offset=0;
 	col_offset=0;
-    stars_new = struct('Pwx',{},'Pwy',{},'val',{});
+    stars_new = struct('Px',{},'Py',{},'val',{});
 	if numel(params)>1
 		x_ctr      = params(1:3:end-1);
 		y_ctr      = params(2:3:end-1);
@@ -28,11 +28,11 @@ function [ H, predicted_val, observed_val,  observed_var, params_new, params_idx
 		for i=1:N
 			star = stars(i);
 			[observed_val_part,observed_var_part]=window_centroid(star,I_stats );
-			[predicted_val_part,predicted_H_part]=pixelval_and_jacobian( [params(3*(i-1)+(1:3)) psf_radius], star.Pwx, star.Pwy);
+			[predicted_val_part,predicted_H_part]=pixelval_and_jacobian( [params(3*(i-1)+(1:3)) psf_radius], star.Px, star.Py);
 
 			%exclude pixels which are predicted to be over the max value, or
 			%smaller than maxval*eps
-			val_idx   = and(predicted_val_part<1,predicted_val_part>eps);
+			val_idx   = and(predicted_val_part<I_stats.img_max,predicted_val_part>I_stats.img_max*eps);
 			val_count = sum(val_idx);
 
 

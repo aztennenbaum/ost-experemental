@@ -7,10 +7,13 @@ BrightestN=I_config.BrightestN;
 
 [I_stats]=CollectImageStats(I,TileSize);
 
-threshold_map=single(I_stats.m_img+5*sqrt(I_stats.v_img));
-threshold_map_large=imresize(threshold_map,size(I),'bilinear');
+threshold_map=I_stats.m_img+5*sqrt(I_stats.v_img);
+%threshold_map_large=imresize(threshold_map,size(I),'bilinear');
+m_large=imresize(I_stats.m_img,size(I),'bilinear');
+v_large=imresize(I_stats.v_img,size(I),'bilinear');
+threshold_map_large=m_large+5*sqrt(v_large);
 aa=bwconncomp(I>threshold_map_large,4);
-params = zeros(aa.NumObjects,4);
+S_stats = zeros(aa.NumObjects,4);
 star_idx=1;
 % tic
 for pixel=aa.PixelIdxList
@@ -18,39 +21,43 @@ for pixel=aa.PixelIdxList
 	%note: Matlab stores images in column major order
     [Px,Py]=idx2xy(idx, size(I,1));
     if (min(Px)<max(Px)&&min(Py)<max(Py))
-        val=double(single(I(idx))-threshold_map_large(idx));
-        [centroid,totalval,min_eig]=pixels2params( Px, Py, val);
-		params(star_idx,:)=[centroid,totalval,min_eig];
+	%if numel(idx)>1
+        [bg_val,~,~]=windowed_mvp(Px, Py, I_stats);
+        val=double(I(idx))-bg_val;
+        star=struct('Px',Px(:),'Py',Py(:),'val',val(:));
+        [centroid,totalval,min_eig]=star2stats(star);
+		S_stats(star_idx,:)=[centroid,totalval,min_eig];
 		star_idx = star_idx+1;
 			
     end
 end
 % toc
-params=sortrows(params(1:(star_idx-1),:),3,'descend');
+S_stats=sortrows(S_stats(1:(star_idx-1),:),3,'descend');
 
-params=params(1:min(BrightestN,size(params,1)),:);
+S_stats=S_stats(1:min(BrightestN,size(S_stats,1)),:);
 
-if numel(params)>0
-    stars2=starExtractorTest(I,threshold_map_large);stars2=double(stars2(:,1:min(end,BrightestN))');
+if numel(S_stats)>0
+    stars2=starExtractorTest(I,I_stats.m_img,I_stats.v_img);stars2=double(stars2(:,1:min(end,BrightestN))');
     I_red=I;I_green=I;I_blue=I;
-    I_red(get_star_pixels_idx(params(:,2),params(:,1),5,I_stats.img_width, I_stats.img_height))=I_stats.img_max;
+    I_red(get_star_pixels_idx(S_stats(:,2),S_stats(:,1),5,I_stats.img_width, I_stats.img_height))=I_stats.img_max;
     I_green(get_star_pixels_idx(stars2(:,2),stars2(:,1),3,I_stats.img_width, I_stats.img_height))=I_stats.img_max;
     imshow(cat(3,I_red,I_green,I_blue));
     figure
     imshow(double(threshold_map_large)/I_stats.img_max)
     figure
-    imshow(double(interpolateThresholdTest(I,threshold_map))/I_stats.img_max)
+    imshow(double(interpolateMapTest(I,threshold_map))/I_stats.img_max)
     figure
-    [t,~,~]=estimateBackgroundTest(I,threshold_map);
-    imshow(double(interpolateThresholdTest(I,t))/I_stats.img_max);
-    max(max(threshold_map_large-interpolateThresholdTest(I,threshold_map)))
+    [m,v]=estimateBackgroundTest(I,threshold_map);
+    t=m+5*sqrt(v);
+    imshow(double(interpolateMapTest(I,t))/I_stats.img_max);
+    max(max(threshold_map_large-interpolateMapTest(I,threshold_map)))
     keyboard
 end
 
-params=params(:,[2 1 3])';
+params=S_stats(:,[2 1 3])';
 %params {x1 y1 totalval1 ... xN yN totalvalN psf_radius}
-params=[params(:)' ];
+params=[params(:)' sqrt(max(mean(S_stats(:,4)),1/12))];
 
-stars=params_and_image_to_stars(params, I, I_config.r);
+stars=stats_and_image_to_stars(S_stats, I, I_config.r);
 end
 

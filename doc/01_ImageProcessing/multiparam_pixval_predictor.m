@@ -27,13 +27,13 @@ function [ H, predicted_val, observed_val,  observed_var, params_new, params_idx
 
 		for i=1:N
 			centroid   = params(3*(i-1)+[2 1]);
-			star=get_star_pixels(centroid ,2, I_grey);
+			star=stats2star(centroid ,2, I_grey);
 			[observed_val_part,observed_var_part]=window_centroid(star,I_stats );
-			[predicted_val_part,predicted_H_part]=pixelval_and_jacobian( [params(3*(i-1)+(1:3)) psf_radius], star.Pwx, star.Pwy);
+			[predicted_val_part,predicted_H_part]=pixelval_and_jacobian( [params(3*(i-1)+(1:3)) psf_radius], star.Px, star.Py);
 
 			%exclude pixels which are predicted to be over the max value, or
 			%smaller than maxval*eps
-			val_idx   = and(predicted_val_part<1,predicted_val_part>eps);
+			val_idx   = and(predicted_val_part<I_stats.img_max,predicted_val_part>I_stats.img_max*eps);
 			val_count = sum(val_idx);
 
 

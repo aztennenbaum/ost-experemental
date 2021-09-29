@@ -1,4 +1,4 @@
-function [ centroid,totalval,min_eig ] = star2params( star )
+function [ centroid,totalval,min_eig ] = star2stats( star )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
 		P=[star.Py,star.Px];
@@ -7,7 +7,7 @@ function [ centroid,totalval,min_eig ] = star2params( star )
 		r_val=[star.val star.val];
 		totalval=sum(star.val);
 		
-		centroid     = sum(r_val.*P,1)/totalval; r_centroid=repmat(centroid,size(star/val));
+		centroid     = sum(r_val.*P,1)/totalval; r_centroid=repmat(centroid,size(star.val));
         
 		v  = ((P-r_centroid).*r_val)'*(P-r_centroid)/totalval;
 		tr = trace(v);

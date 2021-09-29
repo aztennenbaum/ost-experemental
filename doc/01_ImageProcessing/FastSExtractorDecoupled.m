@@ -1,4 +1,4 @@
-function [params,P,I_stats] = FastSExtractorDecoupled( I )
+function [params,P,I_stats,debug] = FastSExtractorDecoupled( I )
 
 ConcavityThreshold=0.15;%minimum concavity of the central 3x3 pixel window.
                       %0.1-0.25 was experementally determined to reject
@@ -22,6 +22,7 @@ I_config=struct('ConcavityThreshold',ConcavityThreshold,...
 
 
 [ params, I_stats, stars ] = ExtractStarsAndStats( I, I_config  );
+debug=params;
 P=[];
 % tic
 for i=1:5

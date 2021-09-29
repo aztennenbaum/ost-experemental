@@ -5,9 +5,9 @@ function [ I_stats ] = CollectImageStats(I,TileSize)
 	step=bin_val(2);
 	img_max=bin_val(end);
 
-	m_img=zeros(ceil(size(I)/TileSize));
-	v_img=zeros(size(m_img));
-	p_img=zeros(size(m_img));
+	m_img=single(zeros(ceil(size(I)/TileSize)));
+	v_img=single(zeros(size(m_img)));
+	p_img=single(zeros(size(m_img)));
 	y_idx=round(linspace(1,size(I,1)+1,size(m_img,1)+1));
 	x_idx=round(linspace(1,size(I,2)+1,size(m_img,2)+1));
 	for y=1:size(m_img,1)
