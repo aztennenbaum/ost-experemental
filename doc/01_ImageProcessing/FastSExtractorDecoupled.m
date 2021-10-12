@@ -1,24 +1,6 @@
 function [params,P,I_stats,debug] = FastSExtractorDecoupled( I )
 
-ConcavityThreshold=0.15;%minimum concavity of the central 3x3 pixel window.
-                      %0.1-0.25 was experementally determined to reject
-                      %image artifacts over a large variety of source
-                      %images. If this is too close to zero, the psf_width
-                      %solution may diverge
-                      
-TileSize = 64;  %according to SExtractor documentation 32-256 works well.
-BrightestN = 10;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
-r = 2; %pixel sample radui - sample pixels in a d^2 square centered at the
-       %middle of the threshold pixels, where d=2*r+1
-img_height=size(I,1);
-img_width =size(I,2);
-
-I_config=struct('ConcavityThreshold',ConcavityThreshold,...
-	           'TileSize',TileSize,...
-			   'BrightestN',BrightestN,...
-			   'r',r,...
-			   'img_height',img_height,...
-			   'img_width',img_width);
+I_config=default_SE_config(I);
 
 
 [ params, I_stats, stars ] = ExtractStarsAndStats( I, I_config  );

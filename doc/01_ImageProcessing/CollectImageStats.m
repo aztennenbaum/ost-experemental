@@ -1,11 +1,11 @@
-function [ I_stats ] = CollectImageStats(I,TileSize)
+function [ I_stats ] = CollectImageStats(I,map_height,map_width)
 	img_height=size(I,1);
 	img_width =size(I,2);
 	[~,bin_val]=imhist(I);
 	step=bin_val(2);
 	img_max=bin_val(end);
 
-	m_img=single(zeros(ceil(size(I)/TileSize)));
+	m_img=single(zeros(map_height,map_width));
 	v_img=single(zeros(size(m_img)));
 	p_img=single(zeros(size(m_img)));
 	y_idx=round(linspace(1,size(I,1)+1,size(m_img,1)+1));

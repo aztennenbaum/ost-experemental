@@ -1,11 +1,10 @@
 function [ params, I_stats, stars ] = ExtractStarsAndStats( I, I_config  )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
-TileSize=I_config.TileSize;
-BrightestN=I_config.BrightestN;
+BrightestN=I_config.max_stars;
 
 
-[I_stats]=CollectImageStats(I,TileSize);
+[I_stats]=CollectImageStats(I,I_config.map_height,I_config.map_width);
 
 threshold_map=I_stats.m_img+5*sqrt(I_stats.v_img);
 %threshold_map_large=imresize(threshold_map,size(I),'bilinear');
@@ -44,13 +43,13 @@ if numel(S_stats)>0
     imshow(cat(3,I_red,I_green,I_blue));
     figure
     imshow(double(threshold_map_large)/I_stats.img_max)
-    figure
-    imshow(double(interpolateMapTest(I,threshold_map))/I_stats.img_max)
-    figure
-    [m,v]=estimateBackgroundTest(I,threshold_map);
-    t=m+5*sqrt(v);
-    imshow(double(interpolateMapTest(I,t))/I_stats.img_max);
-    max(max(threshold_map_large-interpolateMapTest(I,threshold_map)))
+    %figure
+    %imshow(double(interpolateMapTest(threshold_map,I_config))/I_stats.img_max)
+%     figure
+%     [m,v]=estimateBackgroundTest(I,threshold_map);
+%     t=m+5*sqrt(v);
+%     imshow(double(interpolateMapTest(I,t))/I_stats.img_max);
+%     max(max(threshold_map_large-interpolateMapTest(I,threshold_map)))
     keyboard
 end
 

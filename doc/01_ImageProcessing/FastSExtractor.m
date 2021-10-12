@@ -1,15 +1,11 @@
-function [params,P,I_stats,debug] = FastSExtractor( I )
+function [params,P,I_stats,debug] = FastSExtractor( I, I_config )
 
-ConcavityThreshold=0.15;%minimum concavity of the central 3x3 pixel window.
-                      %0.1-0.25 was experementally determined to reject
-                      %image artifacts over a large variety of source
-                      %images. If this is too close to zero, the psf_width
-                      %solution may diverge
-					  
-TileSize=64;    %according to SExtractor documentation 32-256 works well.
-BrightestN = 10;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
+I_config=default_SE_config(I);
 
-[I_stats]=CollectImageStats(I,TileSize);
+
+BrightestN = I_config.BrightestN;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
+
+[I_stats]=CollectImageStats(I,I_config.map_height,I_config.map_width);
 
 aa=bwconncomp((I>imresize(I_stats.m_img+5*sqrt(I_stats.v_img),size(I),'bilinear')),4);
 S_stats = zeros(aa.NumObjects,4);
