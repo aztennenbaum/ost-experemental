@@ -1,9 +1,9 @@
-function [params,P,I_stats,debug] = FastSExtractor( I, I_config )
+function [params,P,I_stats,debug] = FastSExtractor( I )
 
 I_config=default_SE_config(I);
 
 
-BrightestN = I_config.BrightestN;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
+max_stars = I_config.max_stars;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
 
 [I_stats]=CollectImageStats(I,I_config.map_height,I_config.map_width);
 
@@ -45,7 +45,7 @@ end
 % toc
 S_stats=sortrows(S_stats(1:(star_idx-1),:),3,'descend');
 
-S_stats=S_stats(1:min(BrightestN,size(S_stats,1)),:);
+S_stats=S_stats(1:min(max_stars,size(S_stats,1)),:);
 params=S_stats(:,[2 1 3])';
 format short g
 %params {x1 y1 totalval1 ... xN yN totalvalN psf_radius}

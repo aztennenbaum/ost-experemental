@@ -1,7 +1,7 @@
 function [ params, I_stats, stars ] = ExtractStarsAndStats( I, I_config  )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
-BrightestN=I_config.max_stars;
+max_stars=I_config.max_stars;
 
 
 [I_stats]=CollectImageStats(I,I_config.map_height,I_config.map_width);
@@ -33,23 +33,23 @@ end
 % toc
 S_stats=sortrows(S_stats(1:(star_idx-1),:),3,'descend');
 
-S_stats=S_stats(1:min(BrightestN,size(S_stats,1)),:);
+S_stats=S_stats(1:min(max_stars,size(S_stats,1)),:);
 
 if numel(S_stats)>0
-    stars2=starExtractorTest(I,I_stats.m_img,I_stats.v_img);stars2=double(stars2(:,1:min(end,BrightestN))');
+    stars2=starExtractorTest(I,I_stats.m_img,I_stats.v_img,I_config);stars2=double(stars2(:,1:min(end,max_stars))');
     I_red=I;I_green=I;I_blue=I;
     I_red(get_star_pixels_idx(S_stats(:,2),S_stats(:,1),5,I_stats.img_width, I_stats.img_height))=I_stats.img_max;
     I_green(get_star_pixels_idx(stars2(:,2),stars2(:,1),3,I_stats.img_width, I_stats.img_height))=I_stats.img_max;
     imshow(cat(3,I_red,I_green,I_blue));
     figure
     imshow(double(threshold_map_large)/I_stats.img_max)
-    %figure
-    %imshow(double(interpolateMapTest(threshold_map,I_config))/I_stats.img_max)
-%     figure
-%     [m,v]=estimateBackgroundTest(I,threshold_map);
-%     t=m+5*sqrt(v);
-%     imshow(double(interpolateMapTest(I,t))/I_stats.img_max);
-%     max(max(threshold_map_large-interpolateMapTest(I,threshold_map)))
+    figure
+    imshow(double(interpolateMapTest(threshold_map,I_config))/I_stats.img_max)
+    figure
+    [m,v]=estimateBackgroundTest(I,I_config);
+    t=m+5*sqrt(v);
+    imshow(double(interpolateMapTest(t, I_config))/I_stats.img_max);
+    max(max(threshold_map_large-interpolateMapTest(threshold_map,I_config)))
     keyboard
 end
 
@@ -57,6 +57,6 @@ params=S_stats(:,[2 1 3])';
 %params {x1 y1 totalval1 ... xN yN totalvalN psf_radius}
 params=[params(:)' sqrt(max(mean(S_stats(:,4)),1/12))];
 
-stars=stats_and_image_to_stars(S_stats, I, I_config.r);
+stars=stats_and_image_to_stars(S_stats, I, I_config.sample_radius);
 end
 
