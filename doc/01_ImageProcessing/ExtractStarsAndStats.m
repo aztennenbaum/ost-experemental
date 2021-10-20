@@ -6,11 +6,11 @@ max_stars=I_config.max_stars;
 
 [I_stats]=CollectImageStats(I,I_config.map_height,I_config.map_width);
 
-threshold_map=I_stats.m_img+5*sqrt(I_stats.v_img);
-%threshold_map_large=imresize(threshold_map,size(I),'bilinear');
-m_large=imresize(I_stats.m_img,size(I),'bilinear');
-v_large=imresize(I_stats.v_img,size(I),'bilinear');
-threshold_map_large=m_large+5*sqrt(v_large);
+threshold_map=I_stats.m_img+double(I_config.threshold_sigma)*sqrt(I_stats.v_img);
+threshold_map_large=imresize(threshold_map,size(I),'bilinear');
+%m_large=imresize(I_stats.m_img,size(I),'bilinear');
+%v_large=imresize(I_stats.v_img,size(I),'bilinear');
+%threshold_map_large=m_large+double(I_config.threshold_sigma)*sqrt(v_large);
 aa=bwconncomp(I>threshold_map_large,4);
 S_stats = zeros(aa.NumObjects,4);
 star_idx=1;

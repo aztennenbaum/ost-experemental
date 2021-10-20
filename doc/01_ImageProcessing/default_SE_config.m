@@ -8,7 +8,7 @@ ConcavityThreshold=0.15;%minimum concavity of the central 3x3 pixel window.
                         %images. If this is too close to zero, the psf_width
                         %solution may diverge
 
-max_stars = 10;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
+max_stars = 70;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
                 % NOTE: we do an online insertion sort of O(MAX_STARS^2) to get the top N stars
                 % If MAX_STARS is >1000, you may need to swap this with nth_element (or the c equivalent)
                 % the cost of this is you will need enough memory to remember every star, which could be
