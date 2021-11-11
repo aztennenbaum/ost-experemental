@@ -1,4 +1,4 @@
-function [ s ] = stereoproj2inv( c, zsign )
+function [ s ] = stereoprojinv( c, zsign )
 % syms x1 y1 z1;
 % assume([x1 y1 z1],'real');
 % assumeAlso(x1^2+y1^2+z1^2==1)
