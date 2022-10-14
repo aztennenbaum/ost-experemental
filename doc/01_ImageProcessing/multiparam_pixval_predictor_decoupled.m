@@ -27,8 +27,10 @@ function [ H, predicted_val, observed_val,  observed_var, params_new, params_idx
 
 		for i=1:N
 			star = stars(i);
+            Px   = double(star.Px);
+            Py   = double(star.Py);
 			[observed_val_part,observed_var_part]=window_centroid(star,I_stats );
-			[predicted_val_part,predicted_H_part]=pixelval_and_jacobian( [params(3*(i-1)+(1:3)) psf_radius], star.Px, star.Py);
+			[predicted_val_part,predicted_H_part]=pixelval_and_jacobian( [params(3*(i-1)+(1:3)) psf_radius], Px, Py);
 
 			%exclude pixels which are predicted to be over the max value, or
 			%smaller than maxval*eps
