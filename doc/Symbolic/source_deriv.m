@@ -2,7 +2,7 @@ syms  Px Py x y totalval maxval psf_radius saturation_radius
 assume([Px Py x,y],'real')
 assume([totalval,maxval,psf_radius,saturation_radius],'positive')
 g(Px, Py, x, y, totalval, psf_radius)=totalval*mvnorm([Px-x;Py-y],eye(2)*psf_radius^2);
-f(Px, Py, x, y, totalval, psf_radius)=simplify(int(int(totalval*mvnorm([Px-x;Py-y],eye(2)*psf_radius^2),x,x-.5,x+.5),y,y-.5,y+.5));
+f(Px, Py, x, y, totalval, psf_radius)=simplify(int(int(totalval*mvnorm([Px-x;Py-y],eye(2)*psf_radius^2),Px,Px-.5,Px+.5),Py,Py-.5,Py+.5));
 df(Px, Py, x, y, totalval, psf_radius)=simplify(jacobian(f,[x, y, totalval, psf_radius]));
 [val,H]=pixelval_and_jacobian([.1,.2,10,.75],1,2);
 
