@@ -58,5 +58,7 @@ params=S_stats(:,[2 1 3])';
 params=[params(:)' sqrt(max(mean(S_stats(:,4)),1/12))];
 
 stars=stats_and_image_to_stars(S_stats, I, I_config.sample_radius);
+%[mm,vv,pixels,offsets]=starTrackerTest(I,I_config);
+%starsTest=pixels_and_offsets_to_stars(pixels,offsets,I_config);
 end
 
