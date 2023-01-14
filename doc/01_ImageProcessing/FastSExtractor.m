@@ -5,7 +5,7 @@ I_config=default_SE_config(I);
 
 max_stars = I_config.max_stars;%use the N brightest stars that meet all of the criteria. 10 seems to be the best
 
-[I_stats]=CollectImageStats(I,I_config.map_height,I_config.map_width);
+[I_stats]=CollectImageStats(I,I_config);
 
 aa=bwconncomp((I>imresize(I_stats.m_img+double(I_config.threshold_sigma)*sqrt(I_stats.v_img),size(I),'bilinear')),4);
 S_stats = zeros(aa.NumObjects,4);

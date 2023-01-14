@@ -4,7 +4,7 @@ function [ params, I_stats, stars ] = ExtractStarsAndStats( I, I_config  )
 max_stars=I_config.max_stars;
 
 
-[I_stats]=CollectImageStats(I,I_config.map_height,I_config.map_width);
+[I_stats]=CollectImageStats(I,I_config);
 
 threshold_map=I_stats.m_img+double(I_config.threshold_sigma)*sqrt(I_stats.v_img);
 threshold_map_large=imresize(threshold_map,size(I),'bilinear');
