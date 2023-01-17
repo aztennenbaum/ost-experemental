@@ -31,7 +31,7 @@ for pixel=aa.PixelIdxList
     end
 end
 % toc
-S_stats=sortrows(S_stats(1:(star_idx-1),:),3,'descend');
+S_stats=sortrows(S_stats(1:(star_idx-1),:),-3);
 
 S_stats=S_stats(1:min(max_stars,size(S_stats,1)),:);
 
@@ -50,7 +50,7 @@ if numel(S_stats)>0
     t=m+5*sqrt(v);
     imshow(double(interpolateMapTest(t, I_config))/I_stats.img_max);
     max(max(threshold_map_large-interpolateMapTest(threshold_map,I_config)))
-    keyboard
+    %keyboard
 end
 
 params=S_stats(:,[2 1 3])';

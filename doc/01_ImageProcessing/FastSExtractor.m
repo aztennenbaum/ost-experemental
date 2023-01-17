@@ -43,7 +43,7 @@ for i=aa.PixelIdxList
 	end
 end
 % toc
-S_stats=sortrows(S_stats(1:(star_idx-1),:),3,'descend');
+S_stats=sortrows(S_stats(1:(star_idx-1),:),-3);
 
 S_stats=S_stats(1:min(max_stars,size(S_stats,1)),:);
 params=S_stats(:,[2 1 3])';
