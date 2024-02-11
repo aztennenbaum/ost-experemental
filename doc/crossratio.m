@@ -1,5 +1,8 @@
-function [ out ] = crossratio( a,b,c,d )
+function [ z ] = crossratio( a,b,c,d )
+%calculate cross ratio
+%z
+%
 
-out=((a-c).*(b-d))./((b-c).*(a-d));
+z=((a-c).*(b-d))./((b-c).*(a-d));
 end
 

@@ -1,6 +1,6 @@
 function [ X ] = sign_nz( X )
-%UNTITLED9 Summary of this function goes here
-%   Detailed explanation goes here
+%if X=0 return 1
+%else return sign(X)
 
 X=sign(X)+1-abs(sign(X));
 %X=sign(X);
