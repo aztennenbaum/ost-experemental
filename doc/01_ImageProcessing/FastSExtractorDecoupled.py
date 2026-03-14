@@ -1,3 +1,4 @@
+# fast_sextractor.py - Star extraction via decoupled PSF fitting
 import numpy as np
 from PIL import Image, ImageDraw
 from scipy.ndimage import label, map_coordinates
@@ -6,71 +7,133 @@ from scipy.sparse import diags, csr_matrix
 import sys
 
 class SEConfig:
-    def __init__(self, h, w):
+    """Configuration parameters for star extraction."""
+    
+    def __init__(self, h, w, max_pixel_brightness):
         self.threshold_sigma = 5.0
         self.max_stars = 1000
-        self.sample_radius = 2
+        self.sample_radius = 5
         self.tile_size = 64
-        self.img_height, self.img_width = h, w
+        self.max_pixel_brightness = max_pixel_brightness
         self.map_height = int(np.ceil(h / self.tile_size))
         self.map_width = int(np.ceil(w / self.tile_size))
 
 class ImageStats:
-    def __init__(self, m, v, p, xi, yi, xg, yg, imax, h, w):
-        self.m_img, self.v_img, self.p_img = m, v, p
-        self.x_idx, self.y_idx = xi, yi
-        self.x_interp, self.y_interp = xg, yg
-        self.img_max, self.img_height, self.img_width = imax, h, w
+    """Spatially-varying background statistics over image tiles.
+    
+    Background maps can be interpolated to obtain local estimates
+    at arbitrary pixel positions.
+    """
+    
+    def __init__(self, mean, var, poisson, x_centers, y_centers):
+        self.mean = mean
+        self.var = var
+        self.poisson = poisson
+        self.x_interp = x_centers
+        self.y_interp = y_centers
 
 class Star:
-    def __init__(self, px, py, val, bgm, bgv, bgp):
-        self.Px, self.Py, self.val = px, py, val
-        self.bgm, self.bgv, self.bgp = bgm, bgv, bgp
+    """Detected star as list of pixels with local background statistics."""
+    
+    def __init__(self, px, py, val, bg_mean, bg_var, bg_poisson):
+        self.px = px
+        self.py = py
+        self.val = val
+        self.bg_mean = bg_mean
+        self.bg_var = bg_var
+        self.bg_poisson = bg_poisson
 
-def calc_bg_stats_with_threshold(tile, threshold_sigma):
+def load_image(path):
+    """Load image and return normalized grayscale with config.
+    
+    Returns (img_gray, cfg) where img_gray is uint16 grayscale 2D array
+    and cfg.max_pixel_brightness reflects actual data range.
+    Returns (None, None) for unsupported formats.
+    """
+    
+    img = np.array(Image.open(path))
+    
+    # only support uint8 or uint16
+    if img.dtype not in [np.uint8, np.uint16]:
+        print(f"unsupported data type: {img.dtype}")
+        return None, None
+    
+    # convert to grayscale
+    if img.ndim == 3:
+        # rgb: r + 2*g + b, promote to next larger type
+        r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
+        
+        if img.dtype == np.uint8:
+            gray = r.astype(np.uint16) + 2*g.astype(np.uint16) + b.astype(np.uint16)
+            max_brightness = 255*4
+        else:  # uint16
+            gray = r.astype(np.uint32) + 2*g.astype(np.uint32) + b.astype(np.uint32)
+            max_brightness = 65525*4
+    elif img.ndim == 2:
+        # grayscale
+        if img.dtype == np.uint8:
+            gray = img.astype(np.uint16)
+            max_brightness = 255
+        else:  # uint16
+            gray = img
+            max_brightness = 65535
+    else:
+        print(f"unsupported image dimensions: {img.ndim}")
+        return None, None
+    
+    h, w = gray.shape
+    cfg = SEConfig(h, w, max_brightness)
+    
+    return gray, cfg
+
+def compute_background_statistics(tile, sigma_thresh):
+    """Robust background estimation via iterative sigma-clipping on histogram."""
+    
     if tile.min() == tile.max():
         return float(tile.min()), 0.0, float(tile.min())
     
-    if tile.dtype == np.uint8:
-        nbins = 256
-    elif tile.dtype == np.uint16:
-        nbins = 65536
-    else:
-        nbins = 256
+    nbins = 256 if tile.dtype == np.uint8 else 65536 if tile.dtype == np.uint16 else 256
+    hist = np.bincount(tile.ravel(), minlength=nbins).astype(np.float64)
+    bins = np.arange(nbins, dtype=np.float64)
     
-    cnt = np.bincount(tile.ravel(), minlength=nbins)
-    bv = np.arange(nbins, dtype=np.float64)
-    cnt = cnt.astype(np.float64)
+    mask = hist > 0
+    hist, bins = hist[mask], bins[mask]
     
-    msk = cnt > 0
-    cnt, bv = cnt[msk], bv[msk]
-    
-    if len(cnt) == 0:
+    if len(hist) == 0:
         return 0.0, 0.0, 0.0
     
-    n = len(bv)
-    c0, c1, c2 = cnt.copy(), cnt * bv, cnt * bv**2
-    s, m, v, t = np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n)
+    n = len(bins)
+    c0 = hist.copy()
+    c1 = hist * bins
+    c2 = hist * bins**2
+    
+    mu = np.zeros(n)
+    var = np.zeros(n)
+    thresh = np.zeros(n)
     
     for i in range(n):
-        if i > 0 and bv[i-1] < t[i-1]:
+        if i > 0 and bins[i-1] < thresh[i-1]:
             c0[i] += c0[i-1]
             c1[i] += c1[i-1]
             c2[i] += c2[i-1]
-        s[i] = c0[i]
-        m[i] = c1[i] / c0[i]
-        v[i] = max(c2[i] / c0[i] - m[i]**2 + 1/12, 0.0)
-        m[i] += 1/2
-        t[i] = m[i] + np.sqrt(v[i]) * threshold_sigma
+        
+        mu[i] = c1[i] / c0[i]
+        var[i] = max(c2[i] / c0[i] - mu[i]**2 + 1/12, 0.0)
+        mu[i] += 1/2
+        thresh[i] = mu[i] + np.sqrt(var[i]) * sigma_thresh
     
-    idx = np.argmax(c0)
-    return m[idx], v[idx], t[idx]
+    peak = np.argmax(c0)
+    return mu[peak], var[peak], thresh[peak]
 
-def compute_image_stats(img, cfg):
-    h, w, mh, mw = img.shape[0], img.shape[1], cfg.map_height, cfg.map_width
-    m = np.zeros((mh, mw), dtype=np.float32)
-    v = np.zeros((mh, mw), dtype=np.float32)
-    p = np.zeros((mh, mw), dtype=np.float32)
+def compute_tiled_statistics(img, cfg):
+    """Compute background statistics over image tiles."""
+    
+    h, w = img.shape
+    mh, mw = cfg.map_height, cfg.map_width
+    
+    mean_map = np.zeros((mh, mw), dtype=np.float32)
+    var_map = np.zeros((mh, mw), dtype=np.float32)
+    poisson_map = np.zeros((mh, mw), dtype=np.float32)
     
     yi = np.round(np.linspace(0, h, mh + 1)).astype(int)
     xi = np.round(np.linspace(0, w, mw + 1)).astype(int)
@@ -78,373 +141,509 @@ def compute_image_stats(img, cfg):
     for ty in range(mh):
         for tx in range(mw):
             tile = img[yi[ty]:yi[ty+1], xi[tx]:xi[tx+1]]
-            if tile.size == 0: continue
-            bm, bv, _ = calc_bg_stats_with_threshold(tile, cfg.threshold_sigma)
-            m[ty, tx], v[ty, tx] = bm, bv
-            p[ty, tx] = bv / bm if bm > 0 else 0
+            if tile.size == 0:
+                continue
+            
+            mu, var, _ = compute_background_statistics(tile, cfg.threshold_sigma)
+            mean_map[ty, tx] = mu
+            var_map[ty, tx] = var
+            poisson_map[ty, tx] = var / mu if mu > 0 else 0
     
-    xg = (xi[1:] + xi[:-1]) / 2.0
-    yg = (yi[1:] + yi[:-1]) / 2.0
-    return ImageStats(m, v, p, xi, yi, xg, yg, float(np.max(img)), h, w)
+    xc = (xi[1:] + xi[:-1]) / 2.0
+    yc = (yi[1:] + yi[:-1]) / 2.0
+    
+    return ImageStats(mean_map, var_map, poisson_map, xc, yc)
 
-def windowed_mvp(px, py, st):
-    px0, py0 = px - 1, py - 1
-    pxc = np.clip(px0, st.x_interp[0], st.x_interp[-1])
-    pyc = np.clip(py0, st.y_interp[0], st.y_interp[-1])
-    xi = np.interp(pxc, st.x_interp, np.arange(len(st.x_interp)))
-    yi = np.interp(pyc, st.y_interp, np.arange(len(st.y_interp)))
-    c = np.array([yi, xi])
-    m = map_coordinates(st.m_img, c, order=1, mode='nearest')
-    v = map_coordinates(st.v_img, c, order=1, mode='nearest')
-    p = map_coordinates(st.p_img, c, order=1, mode='nearest')
-    return m, v, p
+def interpolate_background(px, py, stats):
+    """Bilinear interpolation of background statistics at pixel positions."""
+    
+    px_clip = np.clip(px, stats.x_interp[0], stats.x_interp[-1])
+    py_clip = np.clip(py, stats.y_interp[0], stats.y_interp[-1])
+    
+    xi = np.interp(px_clip, stats.x_interp, np.arange(len(stats.x_interp)))
+    yi = np.interp(py_clip, stats.y_interp, np.arange(len(stats.y_interp)))
+    
+    coords = np.array([yi, xi])
+    
+    mu = map_coordinates(stats.mean, coords, order=1, mode='nearest')
+    var = map_coordinates(stats.var, coords, order=1, mode='nearest')
+    poisson = map_coordinates(stats.poisson, coords, order=1, mode='nearest')
+    
+    return mu, var, poisson
 
-def star2stats(star):
-    P = np.column_stack([star.Py, star.Px])
-    val = star.val.astype(np.float64)
-    rv = np.column_stack([val, val])
-    tot = np.sum(val)
-    ctr = np.sum(rv * P, axis=0) / tot
-    rc = np.tile(ctr, (len(val), 1))
-    cov = ((P - rc) * rv).T @ (P - rc) / tot
-    tr = np.trace(cov)
-    det = np.linalg.det(cov)
-    emin = (tr - np.sqrt(max(tr**2 - 4*det, 0))) / 2
-    return ctr, tot, emin
+def compute_star_moments(star):
+    """Compute intensity-weighted centroid and minimum eigenvalue."""
+    
+    P = np.column_stack([star.py, star.px])
+    v = star.val.astype(np.float64)
+    w = np.column_stack([v, v])
+    
+    I = np.sum(v)
+    c = np.sum(w * P, axis=0) / I
+    
+    c_rep = np.tile(c, (len(v), 1))
+    C = ((P - c_rep) * w).T @ (P - c_rep) / I
+    
+    tr = np.trace(C)
+    det = np.linalg.det(C)
+    eig_min = (tr - np.sqrt(max(tr**2 - 4*det, 0))) / 2
+    
+    return c, I, eig_min
 
-def stats2star(c, r, img, st):
-    y, x = c
+def sample_star_region(centroid, r, img, stats):
+    """Extract square region of pixels around centroid."""
+    
+    y, x = centroid
     h, w = img.shape
-    x0 = int(np.clip(np.round(x), 1+r, w-r))
-    y0 = int(np.clip(np.round(y), 1+r, h-r))
-    xi = np.arange(x0-r, x0+r+1)
-    yi = np.arange(y0-r, y0+r+1)
-    px = np.repeat(xi, len(yi))
-    py = np.tile(yi, len(xi))
-    val = img[y0-r-1:y0+r, x0-r-1:x0+r].ravel(order='F')
-    bgm, bgv, bgp = windowed_mvp(px.astype(np.float64), py.astype(np.float64), st)
     
-    return Star(px, py, val, bgm, bgv, bgp)
+    xi = int(np.clip(np.round(x), r, w-r-1))
+    yi = int(np.clip(np.round(y), r, h-r-1))
+    
+    x_range = np.arange(xi-r, xi+r+1)
+    y_range = np.arange(yi-r, yi+r+1)
+    
+    px = np.repeat(x_range, len(y_range))
+    py = np.tile(y_range, len(x_range))
+    
+    val = img[yi-r:yi+r+1, xi-r:xi+r+1].ravel(order='F')
+    
+    mu, var, poisson = interpolate_background(px.astype(np.float64), 
+                                              py.astype(np.float64), 
+                                              stats)
+    
+    return Star(px, py, val, mu, var, poisson)
 
-def window_centroid(star, st):
-    val = star.val.astype(np.float64)
-    wval = val - star.bgm
-    wvar = np.maximum(val * star.bgp, 0) + star.bgv
-    return wval, wvar
+def background_subtract(star):
+    """Background-subtracted values and uncertainties."""
+    
+    v = star.val.astype(np.float64)
+    obs = v - star.bg_mean
+    var = np.maximum(v * star.bg_poisson, 0) + star.bg_var
+    return obs, var
 
-def pixelval_and_jacobian(prm, px, py):
-    x, y = px - prm[0], py - prm[1]
-    tot, rad = prm[2], prm[3]
-    s2 = rad * np.sqrt(2)
+def evaluate_gaussian_psf(params, px, py):
+    """Evaluate Gaussian PSF model and Jacobian.
     
-    y1, y2 = (y - 0.5) / s2, (y + 0.5) / s2
-    x1, x2 = (x - 0.5) / s2, (x + 0.5) / s2
+    Integrates 2D Gaussian over pixel area using error functions.
+    Returns predicted values and derivatives w.r.t. [x, y, I, sigma].
+    """
     
-    xv, yv = erf(x1) - erf(x2), erf(y1) - erf(y2)
+    dx = px - params[0]
+    dy = py - params[1]
+    I = params[2]
+    sigma = params[3]
     
-    r1, r2, r3, r4 = np.exp(-x1**2), np.exp(-x2**2), np.exp(-y1**2), np.exp(-y2**2)
+    s = sigma * np.sqrt(2)
     
-    r7 = tot / (rad * 2 * np.sqrt(2 * np.pi))
-    val = xv * yv * tot / 4
-    H = np.column_stack([
-        -r7 * yv * (r1 - r2),
-        -r7 * xv * (r3 - r4),
-        val / tot,
-        -np.sqrt(2) * r7 * (xv * (r3*y1 - r4*y2) + yv * (r1*x1 - r2*x2))
+    y1 = (dy - 0.5) / s
+    y2 = (dy + 0.5) / s
+    x1 = (dx - 0.5) / s
+    x2 = (dx + 0.5) / s
+    
+    ex = erf(x1) - erf(x2)
+    ey = erf(y1) - erf(y2)
+    
+    e1 = np.exp(-x1**2)
+    e2 = np.exp(-x2**2)
+    e3 = np.exp(-y1**2)
+    e4 = np.exp(-y2**2)
+    
+    norm = I / (sigma * 2 * np.sqrt(2 * np.pi))
+    pred = ex * ey * I / 4
+    
+    J = np.column_stack([
+        -norm * ey * (e1 - e2),
+        -norm * ex * (e3 - e4),
+        pred / I,
+        -np.sqrt(2) * norm * (ex * (e3*y1 - e4*y2) + ey * (e1*x1 - e2*x2))
     ])
-    return val, H
+    
+    return pred, J
 
-def multiparam_pixval_predictor_decoupled(prm, st, stars):
-    if len(prm) <= 1:
+def build_multistar_model(params, stats, stars, cfg):
+    """Build joint observation equation for multiple stars with shared PSF.
+    
+    Returns sparse Jacobian H, predictions, observations, variances,
+    and updated parameter/star lists.
+    """
+    
+    if len(params) <= 1:
         return (csr_matrix((0,0)), np.array([]), np.array([]),
                 np.array([]), np.array([]), np.array([]), 0, [])
     
-    rad = max(prm[-1], np.sqrt(1.0/12))
-    N = min(len(prm)//3, len(stars))
-    Hr, Hc, Hd = [], [], []
-    pnew, pidx = [], []
-    pred, obs, ovar = [], [], []
-    snew = []
-    roff, coff = 0, 0
+    sigma = max(params[-1], np.sqrt(1.0/12))
+    n_stars = min(len(params)//3, len(stars))
     
-    for i in range(N):
+    Jr, Jc, Jd = [], [], []
+    p_upd, p_idx = [], []
+    pred_list, obs_list, var_list = [], [], []
+    stars_upd = []
+    
+    row = 0
+    col = 0
+    
+    for i in range(n_stars):
         star = stars[i]
-        px, py = star.Px.astype(np.float64), star.Py.astype(np.float64)
-        ov, ovar_part = window_centroid(star, st)
-        pv, pH = pixelval_and_jacobian([prm[3*i], prm[3*i+1], prm[3*i+2], rad], px, py)
+        px = star.px.astype(np.float64)
+        py = star.py.astype(np.float64)
         
-        vidx = (pv < st.img_max) & (pv > st.img_max * np.finfo(float).eps)
-        vcnt = np.sum(vidx)
-        if vcnt == 0 or np.count_nonzero(ovar_part[vidx]) != vcnt: continue
+        obs, var = background_subtract(star)
         
-        Hsub, vsub = pH[vidx, :], ovar_part[vidx]
+        p = [params[3*i], params[3*i+1], params[3*i+2], sigma]
+        pred, J = evaluate_gaussian_psf(p, px, py)
         
-        for row in range(vcnt):
-            for col in range(3):
-                Hr.append(roff + row)
-                Hc.append(coff + col)
-                Hd.append(Hsub[row, col])
+        # Exclude saturated pixels
+        valid = (pred < cfg.max_pixel_brightness) & (pred > np.sqrt(var))
+        n_valid = np.sum(valid)
         
-        pnew.extend([prm[3*i], prm[3*i+1], prm[3*i+2]])
-        pidx.extend([3*i, 3*i+1, 3*i+2])
-        snew.append(star)
-        pred.extend(pv[vidx])
-        obs.extend(ov[vidx])
-        ovar.extend(ovar_part[vidx])
-        roff += vcnt
-        coff += 3
+        if n_valid <4 or np.count_nonzero(var[valid]) != n_valid:
+            continue
+        
+        J_sub = J[valid, :]
+        
+        for r in range(n_valid):
+            for c in range(3):
+                Jr.append(row + r)
+                Jc.append(col + c)
+                Jd.append(J_sub[r, c])
+        
+        p_upd.extend([params[3*i], params[3*i+1], params[3*i+2]])
+        p_idx.extend([3*i, 3*i+1, 3*i+2])
+        stars_upd.append(star)
+        
+        pred_list.extend(pred[valid])
+        obs_list.extend(obs[valid])
+        var_list.extend(var[valid])
+        
+        row += n_valid
+        col += 3
     
-    if coff == 0:
+    if col == 0:
         return (csr_matrix((0,0)), np.array([]), np.array([]),
                 np.array([]), np.array([]), np.array([]), 0, [])
     
-    # Shared PSF radius
-    crow = 0
-    for i, star in enumerate(snew):
-        px, py = star.Px.astype(np.float64), star.Py.astype(np.float64)
-        ov, ovar_part = window_centroid(star, st)
-        pv, pH = pixelval_and_jacobian([pnew[3*i], pnew[3*i+1], pnew[3*i+2], rad], px, py)
-        vidx = (pv < st.img_max) & (pv > st.img_max * np.finfo(float).eps)
-        Hsub = pH[vidx, :]
-        vcnt = np.sum(vidx)
-        for row in range(vcnt):
-            Hr.append(crow + row)
-            Hc.append(coff)
-            Hd.append(Hsub[row, 3])
-        crow += vcnt
+    # Add shared PSF parameter column
+    cur_row = 0
+    for i, star in enumerate(stars_upd):
+        px = star.px.astype(np.float64)
+        py = star.py.astype(np.float64)
+        
+        obs, var = background_subtract(star)
+        
+        p = [p_upd[3*i], p_upd[3*i+1], p_upd[3*i+2], sigma]
+        pred, J = evaluate_gaussian_psf(p, px, py)
+        
+        # Exclude saturated pixels
+        valid = (pred < cfg.max_pixel_brightness) & (pred > np.sqrt(var))
+        J_sub = J[valid, :]
+        n_valid = np.sum(valid)
+        
+        for r in range(n_valid):
+            Jr.append(cur_row + r)
+            Jc.append(col)
+            Jd.append(J_sub[r, 3])
+        cur_row += n_valid
     
-    pnew.append(rad)
-    pidx.append(len(prm) - 1)
-    H = csr_matrix((Hd, (Hr, Hc)), shape=(roff, coff+1))
-    pred, obs, ovar = np.array(pred), np.array(obs), np.array(ovar)
-    pnew, pidx = np.array(pnew), np.array(pidx)
-    y = obs - pred
-    resid = y @ ((1.0/ovar) * y)
-    return H, pred, obs, ovar, pnew, pidx, resid, snew
+    p_upd.append(sigma)
+    p_idx.append(len(params) - 1)
+    
+    H = csr_matrix((Jd, (Jr, Jc)), shape=(row, col+1))
+    
+    pred = np.array(pred_list)
+    obs = np.array(obs_list)
+    var = np.array(var_list)
+    p_upd = np.array(p_upd)
+    p_idx = np.array(p_idx)
+    
+    resid = obs - pred
+    chi2 = resid @ ((1.0/var) * resid)
+    
+    return H, pred, obs, var, p_upd, p_idx, chi2, stars_upd
 
-def weighted_least_squares(prm, obs, Rinv, pred, H, alpha):
-    y = obs - pred
-    if H.shape[0] == 0 or H.shape[1] == 0:
-        return prm, None
-    
-    HtR = H.T @ Rinv
-    
-    try:
-        mat = (HtR @ H).toarray()
-        cond = np.linalg.cond(mat)
-        print(f"    cond={cond:.4e}")
-        P = np.linalg.inv(mat)
-        K = P @ HtR
-        return prm + alpha * (K @ y), P
-    except Exception as e:
-        print(f"    inv failed: {e}")
-        return prm, None
+# Try to import sparse Cholesky, fall back to dense if unavailable
+try:
+    from sksparse.cholmod import cholesky
+    _HAS_SPARSE_CHOLESKY = True
+except ImportError:
+    from scipy.linalg import cho_factor, cho_solve
+    _HAS_SPARSE_CHOLESKY = False
+    print("Warning: sksparse.cholmod not available, falling back to dense Cholesky (slower)")
+    print("  Install with: pip install scikit-sparse")
 
-def extract_stars_and_stats(img, cfg):
-    st = compute_image_stats(img, cfg)
+def weighted_least_squares(p, obs, var, pred, H, alpha, compute_cov):
+    """One iteration of Gauss-Newton: p_new = p + alpha * K * (obs - pred)."""
     
-    tmap = st.m_img + cfg.threshold_sigma * np.sqrt(st.v_img)
-    sh, sw = tmap.shape
-    dh, dw = img.shape
-    yd, xd = np.arange(dh), np.arange(dw)
-    sy = (sh-1)/(dh-1) if dh>1 else 0
-    sx = (sw-1)/(dw-1) if dw>1 else 0
-    ys, xs = yd*sy, xd*sx
+    HtR = H.T.multiply(1.0 / var)
+    b = HtR @ (obs - pred)
+    
+    if _HAS_SPARSE_CHOLESKY:
+        # Sparse Cholesky (fast)
+        A = (HtR @ H).tocsc()  # CSC format required for CHOLMOD
+        factor = cholesky(A)
+        dp = factor(b)
+        
+        P = None
+        if compute_cov:
+            P = factor(np.eye(A.shape[0]))
+    else:
+        # Dense Cholesky (fallback)
+        A = (HtR @ H).toarray()  # Convert to dense
+        c, low = cho_factor(A)
+        dp = cho_solve((c, low), b)
+        
+        P = None
+        if compute_cov:
+            P = cho_solve((c, low), np.eye(A.shape[0]))
+    
+    return p + alpha * dp, P
+
+def extract_stars(img, cfg):
+    """Detect stars via threshold and label, compute initial parameters."""
+    
+    stats = compute_tiled_statistics(img, cfg)
+    
+    thresh_map = stats.mean + cfg.threshold_sigma * np.sqrt(stats.var)
+    mh, mw = thresh_map.shape
+    h, w = img.shape
+    
+    y = np.arange(h)
+    x = np.arange(w)
+    
+    sy = (mh-1)/(h-1) if h > 1 else 0
+    sx = (mw-1)/(w-1) if w > 1 else 0
+    
+    ys = y * sy
+    xs = x * sx
+    
     yy, xx = np.meshgrid(ys, xs, indexing='ij')
-    c = np.array([yy, xx])
-    tmap_lg = map_coordinates(tmap, c, order=1, mode='nearest')
+    coords = np.array([yy, xx])
+    
+    thresh_full = map_coordinates(thresh_map, coords, order=1, mode='nearest')
     
     struct = np.array([[0,1,0],[1,1,1],[0,1,0]])
-    lbl, nobj = label(img > tmap_lg, structure=struct)
+    labels, n_obj = label(img > thresh_full, structure=struct)
     
-    S = []
+    star_props = []
     
-    # Get all pixels for all objects at once
-    all_y, all_x = np.where(lbl > 0)
-    all_labels = lbl[all_y, all_x]
-    all_y1, all_x1 = all_y + 1, all_x + 1
+    all_y, all_x = np.where(labels > 0)
+    all_labels = labels[all_y, all_x]
     
-    for oid in range(1, nobj+1):
-        mask = all_labels == oid
+    for obj_id in range(1, n_obj+1):
+        mask = all_labels == obj_id
         
-        if not np.any(mask): 
+        if not np.any(mask):
             continue
         
-        py1, px1 = all_y1[mask], all_x1[mask]
-        valid_bounds = np.min(px1) < np.max(px1) and np.min(py1) < np.max(py1)
+        py = all_y[mask]
+        px = all_x[mask]
         
-        if not valid_bounds:
+        if not (np.min(px) < np.max(px) and np.min(py) < np.max(py)):
             continue
         
-        bgm, bgv, bgp = windowed_mvp(px1.astype(np.float64), py1.astype(np.float64), st)
+        mu, var, poisson = interpolate_background(px.astype(np.float64), 
+                                                  py.astype(np.float64), 
+                                                  stats)
         
-        val = img[all_y[mask], all_x[mask]].astype(np.float64) - bgm
-        vidx = val > 0
-        has_valid = np.sum(vidx) > 0
+        bg_sub = img[py, px].astype(np.float64) - mu
+        pos_mask = bg_sub > 0
         
-        if not has_valid:
+        if np.sum(pos_mask) == 0:
             continue
         
-        px_v, py_v, val_v = px1[vidx], py1[vidx], val[vidx]
-        bgm_v, bgv_v, bgp_v = bgm[vidx], bgv[vidx], bgp[vidx]
-        
-        try:
-            star = Star(px_v, py_v, val_v, bgm_v, bgv_v, bgp_v)
-            ctr, tot, eig = star2stats(star)
-            S.append([ctr[0], ctr[1], tot, eig])
-        except:
-            continue
+        star = Star(px[pos_mask], py[pos_mask], bg_sub[pos_mask],
+                   mu[pos_mask], var[pos_mask], poisson[pos_mask])
+        c, I, eig = compute_star_moments(star)
+        star_props.append([c[0], c[1], I, eig])
     
-    if len(S) == 0:
-        return np.array([]), st, [], np.array([])
+    if len(star_props) == 0:
+        return np.array([]), stats, [], np.array([])
     
-    S = np.array(S)
+    S = np.array(star_props)
     S = S[np.argsort(-S[:,2])][:min(cfg.max_stars, len(S))]
     
-    prm, stars = [], []
+    p0 = []
+    stars = []
+    
     for i in range(len(S)):
-        try:
-            star = stats2star(S[i,:2], cfg.sample_radius, img, st)
-            prm.extend([S[i,1], S[i,0], S[i,2]])
-            stars.append(star)
-        except: continue
+        star = sample_star_region(S[i,:2], cfg.sample_radius, img, stats)
+        p0.extend([S[i,1], S[i,0], S[i,2]])
+        stars.append(star)
     
     if len(stars) == 0:
-        return np.array([]), st, [], np.array([])
+        return np.array([]), stats, [], np.array([])
     
-    prm.append(np.sqrt(max(np.mean(S[:len(stars),3]), 1.0/12)))
-    return np.array(prm), st, stars, np.array(prm).copy()
+    sigma0 = np.sqrt(max(np.mean(S[:len(stars), 3]), 1.0/12))
+    p0.append(sigma0)
+    
+    return np.array(p0), stats, stars, np.array(p0).copy()
 
-def fast_sextractor_decoupled(img):
-    cfg = SEConfig(img.shape[0], img.shape[1])
-    prm, st, stars, prm0 = extract_stars_and_stats(img, cfg)
-    if len(prm) == 0:
-        return np.array([]), None, st, np.array([]), np.array([])
+def fit_stars(img, cfg, num_iter=5):
+    """Fit multiple stars with shared PSF radius via iterative least-squares."""
+    
+    p, stats, stars, p0 = extract_stars(img, cfg)
+    
+    if len(p) == 0:
+        return np.array([]), None
     
     P = None
-    print(f"init: N={len(prm)//3}")
+    print(f"init: N={len(p)//3}")
     
-    for it in range(5):
-        H, pred, obs, ovar, prm_it, pidx_it, resid, stars_it = \
-            multiparam_pixval_predictor_decoupled(prm, st, stars)
-        print(f"iter {it}: N={len(prm_it)//3 if len(prm_it)>0 else 0}")
-        if len(prm_it) == 0:
+    for it in range(num_iter):
+        H, pred, obs, var, p_it, p_idx, chi2, stars_it = \
+            build_multistar_model(p, stats, stars, cfg)
+        
+        print(f"iter {it}: N={len(p_it)//3 if len(p_it)>0 else 0}")
+        
+        if len(p_it) == 0:
             print("  no valid params")
             break
-        Rinv = diags(1.0/ovar)
-        prm_new, P_new = weighted_least_squares(prm_it, obs, Rinv, pred, H, 1.0)
-        if P_new is None:
+        
+        # Only compute covariance on the final iteration
+        compute_cov = (it == num_iter - 1)
+        p_new, P_new = weighted_least_squares(p_it, obs, var, pred, H, 1.0, compute_cov)
+        
+        if compute_cov and P_new is None:
             print("  wls failed")
             break
-        prm, P, stars = prm_new, P_new, stars_it
-        print("  ok")
+        
+        p = p_new
+        if P_new is not None:
+            P = P_new
+        stars = stars_it
     
-    print(f"final: N={(len(prm)-1)//3}")
-    H, pred, obs, ovar, prm_f, pidx, resid, stars = \
-        multiparam_pixval_predictor_decoupled(prm, st, stars)
+    # Final model evaluation
+    H, pred, obs, var, p_f, p_idx, chi2, stars = \
+        build_multistar_model(p, stats, stars, cfg)
     
-    if P is not None and len(pidx) > 0:
-        P = P[np.ix_(pidx, pidx)]
+    if P is not None and len(p_idx) > 0:
+        P = P[np.ix_(p_idx, p_idx)]
     
-    return prm_f, P, st, prm, prm0
+    return p_f, P
 
-def write_stars_to_file(prm, prm0, P, fname):
+def write_catalog(params, cov, fname):
+    """Write star catalog: id, x, y, intensity, [uncertainties]."""
+    
     with open(fname, 'w') as f:
         f.write("# star_id x y totalval [unc_x unc_y]\n")
-        if len(prm) == 0: return
-        N = (len(prm)-1)//3
-        f.write(f"# psf_r={prm[-1]:.6f} N={N}\n")
-        for i in range(N):
-            x, y, tot = prm[3*i], prm[3*i+1], prm[3*i+2]
-            if P is not None and 3*i+1 < P.shape[0]:
-                ux = np.sqrt(max(P[3*i,3*i], 0))
-                uy = np.sqrt(max(P[3*i+1,3*i+1], 0))
-                f.write(f"{i+1:4d} {x:12.6f} {y:12.6f} {tot:12.6f} {ux:12.6f} {uy:12.6f}\n")
+        
+        if len(params) == 0:
+            return
+        
+        n = (len(params)-1)//3
+        sigma = params[-1]
+        f.write(f"# psf_r={sigma:.6f} N={n}\n")
+        
+        for i in range(n):
+            x = params[3*i]
+            y = params[3*i+1]
+            I = params[3*i+2]
+            
+            if cov is not None and 3*i+1 < cov.shape[0]:
+                ux = np.sqrt(max(cov[3*i, 3*i], 0))
+                uy = np.sqrt(max(cov[3*i+1, 3*i+1], 0))
+                f.write(f"{i+1:4d} {x:12.6f} {y:12.6f} {I:12.6f} {ux:12.6f} {uy:12.6f}\n")
             else:
-                f.write(f"{i+1:4d} {x:12.6f} {y:12.6f} {tot:12.6f}\n")
+                f.write(f"{i+1:4d} {x:12.6f} {y:12.6f} {I:12.6f}\n")
 
-def draw_stars_on_image(img, prm, output_fname, circle_radius=10, circle_color=(0, 255, 0), line_width=2):
-    """
-    Draw circles around detected stars and save the annotated image.
+def to_8bit_rgb(img):
+    """Convert to 8-bit RGB for visualization."""
     
-    Args:
-        img: Input image (numpy array)
-        prm: Star parameters array from fast_sextractor_decoupled
-        output_fname: Output filename for annotated image
-        circle_radius: Radius of circles to draw (default: 10)
-        circle_color: RGB color tuple (default: green)
-        line_width: Width of circle outline (default: 2)
+    if len(img.shape) == 2:
+        # handle different bit depths
+        if img.dtype == np.uint16:
+            img8 = (img / 256).astype(np.uint8)
+        elif img.dtype == np.uint32:
+            img8 = (img / 16777216).astype(np.uint8)
+        else:
+            img8 = img
+        rgb = np.stack([img8, img8, img8], axis=2)
+    else:
+        rgb = img.copy()
+    
+    if rgb.dtype == np.uint16:
+        return (rgb / 256).astype(np.uint8)
+    elif rgb.dtype != np.uint8:
+        vmin, vmax = rgb.min(), rgb.max()
+        return ((rgb - vmin) / (vmax - vmin) * 255).astype(np.uint8)
+    
+    return rgb
+
+def psf_radius(I, sigma, thresh, var):
+    """Radius where Gaussian PSF = thresh*sqrt(var).
+    
+    2D Gaussian PSF: I/(2*pi*sigma^2) * exp(-r^2/(2*sigma^2))
+    Solve: I/(2*pi*sigma^2) * exp(-r^2/(2*sigma^2)) = thresh*sqrt(var)
+    r = sigma * sqrt(-2*ln(thresh*sqrt(var)*2*pi*sigma^2/I))
     """
-    if len(prm) == 0:
+    
+    arg = thresh * np.sqrt(var) * 2 * np.pi * sigma**2 / I
+    if arg <= 0 or arg >= 1:
+        return 3.0
+    return sigma * np.sqrt(-2 * np.log(arg))
+
+def draw_stars(img, params, fname, stats=None, cfg=None, color=(0, 255, 0), width=1):
+    """Draw circles and crosshairs at star positions."""
+    
+    if len(params) == 0:
         print("No stars to draw")
         return
     
-    # Convert grayscale to RGB if needed
-    if len(img.shape) == 2:
-        img_rgb = np.stack([img, img, img], axis=2)
-    else:
-        img_rgb = img.copy()
-    
-    # Normalize to 8-bit if needed
-    if img_rgb.dtype == np.uint16:
-        img_rgb = (img_rgb / 256).astype(np.uint8)
-    elif img_rgb.dtype != np.uint8:
-        img_rgb = ((img_rgb - img_rgb.min()) / (img_rgb.max() - img_rgb.min()) * 255).astype(np.uint8)
-    
-    # Create PIL image
-    pil_img = Image.fromarray(img_rgb)
+    rgb = to_8bit_rgb(img)
+    pil_img = Image.fromarray(rgb)
     draw = ImageDraw.Draw(pil_img)
     
-    # Extract star positions
-    N = (len(prm) - 1) // 3
-    psf_radius = prm[-1]
+    n = (len(params) - 1) // 3
+    sigma = params[-1]
     
-    print(f"\nDrawing {N} stars with circles (radius={circle_radius}px)")
-    
-    for i in range(N):
-        x = prm[3*i]      # x coordinate (1-indexed from image)
-        y = prm[3*i+1]    # y coordinate (1-indexed from image)
-        tot = prm[3*i+2]  # total intensity
+    for i in range(n):
+        x = params[3*i]
+        y = params[3*i+1]
+        I = params[3*i+2]
         
-        # Convert to 0-indexed pixel coordinates
-        px = x - 1
-        py = y - 1
+        _, var, _ = interpolate_background(np.array([x]), np.array([y]), stats)
+        r = psf_radius(I, sigma, cfg.threshold_sigma, var[0])
         
-        # Draw circle
-        bbox = [
-            px - circle_radius,
-            py - circle_radius,
-            px + circle_radius,
-            py + circle_radius
-        ]
-        draw.ellipse(bbox, outline=circle_color, width=line_width)
-        
-        # Optionally draw crosshair at center
-        crosshair_size = 3
-        draw.line([px - crosshair_size, py, px + crosshair_size, py], 
-                  fill=circle_color, width=1)
-        draw.line([px, py - crosshair_size, px, py + crosshair_size], 
-                  fill=circle_color, width=1)
-    
-    # Save annotated image
-    pil_img.save(output_fname)
-    print(f"Saved annotated image: {output_fname}")
+        draw.line([x - r + 0.5, y + 0.5, x + r + 0.5, y + 0.5], fill=color, width=width)
+        draw.line([x + 0.5, y - r + 0.5, x + 0.5, y + r + 0.5], fill=color, width=width) 
+    pil_img.save(fname)
+    print(f"Saved annotated image: {fname}")
 
-if __name__ == '__main__':
+def default_annotated_name(input_fname, output_fname=None):
+    """Generate default annotated image filename."""
+    if output_fname:
+        return output_fname
+    return input_fname.rsplit('.', 1)[0] + '_annotated.png'
+
+def main():
+    """CLI: python fast_sextractor.py <image> <output> [annotated_image]"""
+    
     if len(sys.argv) < 3:
         print("usage: python fast_sextractor.py <image> <output> [annotated_image]")
         sys.exit(1)
     
-    img = np.array(Image.open(sys.argv[1]))
-    print(f"img: {sys.argv[1]} {img.shape} {img.dtype} [{img.min()},{img.max()}]")
+    img_fname = sys.argv[1]
+    cat_fname = sys.argv[2]
+    ann_fname = sys.argv[3] if len(sys.argv) > 3 else default_annotated_name(img_fname)
     
-    prm, P, st, dbg, prm0 = fast_sextractor_decoupled(img)
-    if len(prm) > 0:
-        print(f"extracted {(len(prm)-1)//3} stars, psf_r={prm[-1]:.4f}")
+    img, cfg = load_image(img_fname)
     
-    write_stars_to_file(prm, prm0, P, sys.argv[2])
-    print(f"wrote: {sys.argv[2]}")
+    if img is None:
+        sys.exit(1)
     
-    # Draw circles around stars
-    annotated_fname = sys.argv[3] if len(sys.argv) > 3 else sys.argv[1].rsplit('.', 1)[0] + '_annotated.png'
-    draw_stars_on_image(img, prm, annotated_fname)
+    print(f"img: {img_fname} {img.shape} {img.dtype} [{img.min()},{img.max()}] max_brightness={cfg.max_pixel_brightness}")
+    
+    params, cov = fit_stars(img, cfg)
+    
+    if len(params) > 0:
+        n = (len(params)-1)//3
+        sigma = params[-1]
+        print(f"extracted {n} stars, psf_r={sigma:.4f}")
+    
+    write_catalog(params, cov, cat_fname)
+    print(f"wrote: {cat_fname}")
+    
+    draw_stars(img, params, ann_fname, stats=compute_tiled_statistics(img, cfg), cfg=cfg)
+
+
+if __name__ == '__main__':
+    main()
